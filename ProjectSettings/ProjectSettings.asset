@@ -831,9 +831,17 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    Android: LEVELPLAY_DEPENDENCIES_INSTALLED;PLUGIN_YG_2;TMP_YG2;NJSON_YG2
-    Standalone: LEVELPLAY_DEPENDENCIES_INSTALLED;PLUGIN_YG_2;TMP_YG2;NJSON_YG2
-    WebGL: PLUGIN_YG_2;TMP_YG2;NJSON_YG2;LEVELPLAY_DEPENDENCIES_INSTALLED;YandexGamesPlatform_yg
+    Android: LEVELPLAY_DEPENDENCIES_INSTALLED;PLUGIN_YG_2;TMP_YG2;NJSON_YG2;YandexGamesPlatform_yg;RewardedAdv_yg;Localization_yg
+    LinuxHeadlessSimulation: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    Nintendo Switch: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    PS4: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    PS5: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    Standalone: LEVELPLAY_DEPENDENCIES_INSTALLED;PLUGIN_YG_2;TMP_YG2;NJSON_YG2;YandexGamesPlatform_yg;RewardedAdv_yg;Localization_yg
+    WebGL: PLUGIN_YG_2;TMP_YG2;NJSON_YG2;LEVELPLAY_DEPENDENCIES_INSTALLED;YandexGamesPlatform_yg;RewardedAdv_yg;Localization_yg
+    Windows Store Apps: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    XboxOne: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    iPhone: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
+    tvOS: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2;RewardedAdv_yg;Localization_yg
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

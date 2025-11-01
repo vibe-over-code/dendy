@@ -2632,7 +2632,7 @@ MonoBehaviour:
   keyBlocks:
   - keys: 77000000610000007300000064000000
   - keys: 20000000
-  fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  fontAsset: {fileID: 0}
   fontSize: 33
   fontColor: {r: 1, g: 1, b: 1, a: 1}
   pulseSpeed: 3

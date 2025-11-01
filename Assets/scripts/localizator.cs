@@ -3,7 +3,10 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using Newtonsoft.Json;
-using System.Runtime.InteropServices;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+using YG; // SDK Яндекс.Игр
+#endif
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -15,8 +18,8 @@ public class Localizator : MonoBehaviour
     public class TextEntry
     {
         public string key;
-        public Text uiText;
-        public TextMeshProUGUI tmpText;
+        public Text uiText;               // стандартный UI Text
+        public TextMeshProUGUI tmpText;   // TMP поддержка
     }
 
     [Header("Файл JSON с локализациями")]
@@ -34,20 +37,15 @@ public class Localizator : MonoBehaviour
     private static string currentLang = "en";
     private static Dictionary<string, string> localizedTexts = new();
 
-    // -------------------------------------------------------------
-    // 🔹 WebGL jslib вызов
-    // -------------------------------------------------------------
-#if UNITY_WEBGL && !UNITY_EDITOR
-    [DllImport("__Internal")]
-    private static extern string GetYandexLanguage();
-#endif
-
     void Start()
     {
         Initialize();
         UpdateTexts();
     }
 
+    // -------------------------------------------------------------
+    // 🔹 Инициализация локализации
+    // -------------------------------------------------------------
     public void Initialize(bool forceReload = false)
     {
         if (initialized && !forceReload) return;
@@ -58,7 +56,7 @@ public class Localizator : MonoBehaviour
 
         if (langsFile == null)
         {
-            Debug.LogError("[Localization] Не указан JSON-файл локализации!");
+            Debug.LogError("[Localizator] Не указан JSON-файл локализации!");
             return;
         }
 
@@ -68,34 +66,25 @@ public class Localizator : MonoBehaviour
             if (root != null && root.ContainsKey(lang))
             {
                 localizedTexts = root[lang];
-                Debug.Log($"[Localization] Загружен язык: {lang}");
+                Debug.Log($"[Localizator] Загружен язык: {lang}");
             }
             else if (root != null && root.ContainsKey("en"))
             {
                 localizedTexts = root["en"];
-                Debug.LogWarning($"[Localization] Язык '{lang}' не найден. Используется 'en'.");
+                Debug.LogWarning($"[Localizator] Язык '{lang}' не найден. Используется 'en'.");
             }
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"[Localization] Ошибка загрузки JSON: {ex.Message}");
+            Debug.LogError($"[Localizator] Ошибка загрузки JSON: {ex.Message}");
         }
 
         initialized = true;
     }
 
-    private string DetectLanguage()
-    {
-#if UNITY_WEBGL && !UNITY_EDITOR
-        string yandexLang = GetYandexLanguage();
-        if (string.IsNullOrEmpty(yandexLang))
-            yandexLang = "en";
-        return yandexLang;
-#else
-        return selectedTestLang.ToString();
-#endif
-    }
-
+    // -------------------------------------------------------------
+    // 🔹 Обновление всех текстов на сцене
+    // -------------------------------------------------------------
     public void UpdateTexts()
     {
         foreach (var t in texts)
@@ -108,18 +97,47 @@ public class Localizator : MonoBehaviour
         }
     }
 
+    // -------------------------------------------------------------
+    // 🔹 Определение языка
+    // -------------------------------------------------------------
+    private string DetectLanguage()
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // Используем YG2.lang (автоопределение SDK)
+        string yandexLang = YG2.lang;
+        if (string.IsNullOrEmpty(yandexLang))
+            yandexLang = "en"; // fallback
+        return yandexLang;
+#else
+        // Режим предпросмотра в редакторе
+        return selectedTestLang.ToString();
+#endif
+    }
+
+    // -------------------------------------------------------------
+    // 🔹 Получить текст по ключу
+    // -------------------------------------------------------------
     public static string Get(string key)
     {
         if (!initialized)
             return $"#{key}";
 
         if (localizedTexts.TryGetValue(key, out string value))
+        {
+            // 💡 Исправляем комбинированные Unicode-глифы
+            if (!string.IsNullOrEmpty(value))
+                value = value.Normalize(System.Text.NormalizationForm.FormC);
             return value;
+        }
 
         return $"#{key}";
     }
 
+
 #if UNITY_EDITOR
+    // -------------------------------------------------------------
+    // 🔹 Обновление текста в редакторе при изменении инспектора
+    // -------------------------------------------------------------
     void OnValidate()
     {
         if (langsFile != null)
