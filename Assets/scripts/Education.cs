@@ -33,6 +33,9 @@ public class Education : MonoBehaviour
 
     void Awake()
     {
+        Localizator loc = FindObjectOfType<Localizator>();
+        if (loc != null)
+            loc.Initialize();
         // Проверяем PlayerPrefs — если обучение пройдено, не показываем
         if (PlayerPrefs.GetInt(PREFS_KEY, 0) == 1)
         {
@@ -146,7 +149,8 @@ public class Education : MonoBehaviour
             text.raycastTarget = false;
 
             // Получаем локализованный текст по ключу вида "edu_Space" или "edu_W"
-            string locKey = "edu_" + key.ToString();
+            string locKey = key.ToString();
+            Debug.Log($"KeyCode {key} => locKey = '{key.ToString()}'");
             string localized = Localizator.Get(locKey);
             text.text = string.IsNullOrEmpty(localized) ? key.ToString().ToUpper() : localized;
 

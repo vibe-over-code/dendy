@@ -10,11 +10,11 @@
     "Close":"Close",
     "Playertab":"Player",
     "Envtab":"Map",
-    "edu_W": "W",
-    "edu_S": "S",
-    "edu_A": "A",
-    "edu_D": "D",
-    "edu_Space": "SPACE"
+    "W": "W",
+    "S": "S",
+    "A": "A",
+    "D": "D",
+    "Space": "SPACE"
   },
   "ru": {
     "play": "Играть",
@@ -27,10 +27,10 @@
     "Close":"Закрыть",
     "Playertab":"Танк",
     "Envtab":"Карта",
-    "edu_W": "Ц",
-    "edu_S": "Ы",
-    "edu_A": "Ф",
-    "edu_D": "В",
-    "edu_Space": "Пробел"
+    "W": "Ц",
+    "S": "Ы",
+    "A": "Ф",
+    "D": "В",
+    "Space": "Пробел"
   }
 }
