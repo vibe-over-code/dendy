@@ -1,0 +1,36 @@
+{
+  "en": {
+    "play": "Play",
+    "exit": "Exit",
+    "tutorial_move": "Use WASD to move",
+    "tutorial_shoot": "Press SPACE to shoot",
+    "Skin":"Skins",
+    "SkinManager":"Skin manager",
+    "Getm":"+50 coins",
+    "Close":"Close",
+    "Playertab":"Player",
+    "Envtab":"Map",
+    "edu_W": "W",
+    "edu_S": "S",
+    "edu_A": "A",
+    "edu_D": "D",
+    "edu_Space": "SPACE"
+  },
+  "ru": {
+    "play": "Играть",
+    "exit": "Выход",
+    "tutorial_move": "Используй WASD для движения",
+    "tutorial_shoot": "Нажми ПРОБЕЛ, чтобы стрелять",
+    "Skin":"Скины",
+    "SkinManager":"Магазин скинов",
+    "Getm":"+50 монет",
+    "Close":"Закрыть",
+    "Playertab":"Танк",
+    "Envtab":"Карта",
+    "edu_W": "Ц",
+    "edu_S": "Ы",
+    "edu_A": "Ф",
+    "edu_D": "В",
+    "edu_Space": "Пробел"
+  }
+}
