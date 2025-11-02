@@ -1,218 +1,244 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 
-public class MapGeneratorMobile : MonoBehaviour
+public class MapGenerator : MonoBehaviour
 {
-    [Header("Player & Map Settings")]
     public Transform player;
-    public Transform mapParent;
+
+    [Header("Простые объекты карты")]
+    public GameObject wallPrefab;
+    public GameObject planePrefab;
+
+    [Header("Новые объекты")]
+    public GameObject barrelPrefab;
+    public GameObject rampPrefab;
+
+    [Header("Враги")]
+    public GameObject enemyPrefab;
+    public int minEnemiesPerChunk = 1;
+    public int maxEnemiesPerChunk = 3;
+    public float enemySpawnCheckRadius = 1f;
+
     public int chunkSize = 16;
     public float blockSize = 3f;
     public int renderDistance = 3;
     public int viewDistance = 1;
 
-    [Header("Prefabs")]
-    public GameObject wallPrefab;
-    public GameObject planePrefab;
-    public GameObject barrelPrefab;
-    public GameObject enemyPrefab;
+    public Transform mapParent;
 
-    [Header("Enemy Settings")]
-    public int minEnemiesPerChunk = 1;
-    public int maxEnemiesPerChunk = 3;
-    public float enemySpawnCheckRadius = 1f;
-
-    private readonly Dictionary<Vector2Int, GameObject> loadedChunks = new();
+    private Dictionary<Vector2Int, GameObject> loadedChunks = new();
     private Vector2Int currentChunk;
-    private float chunkWorldSize;
-    private float checkTimer;
-
-    // --- Пулы объектов ---
-    private ObjectPool wallPool, planePool, barrelPool, enemyPool;
 
     void Start()
     {
-        chunkWorldSize = chunkSize * blockSize;
-
-        // Инициализация пулов
-        wallPool = new ObjectPool(wallPrefab, 100, mapParent);
-        planePool = new ObjectPool(planePrefab, 10, mapParent);
-        barrelPool = new ObjectPool(barrelPrefab, 40, mapParent);
-        enemyPool = new ObjectPool(enemyPrefab, 50, mapParent);
-
-        FindPlayerOnce();
+        UpdatePlayerReference();
         currentChunk = GetChunkCoord(player != null ? player.position : Vector3.zero);
-        GenerateInitialChunks();
+        UpdateChunks();
     }
 
     void Update()
     {
-        if (player == null)
-        {
-            FindPlayerOnce();
-            if (player == null) return;
-        }
-
-        checkTimer += Time.deltaTime;
-        if (checkTimer < 0.25f) return; // проверяем не чаще, чем 4 раза в секунду
-        checkTimer = 0f;
+        UpdatePlayerReference();
+        if (player == null) return;
 
         Vector2Int newChunk = GetChunkCoord(player.position);
-        if (newChunk != currentChunk)
+        if (newChunk != currentChunk || Input.GetKeyDown(KeyCode.G))
         {
             currentChunk = newChunk;
             UpdateChunks();
         }
     }
 
-    void FindPlayerOnce()
+    void UpdatePlayerReference()
     {
         if (player == null)
         {
-            GameObject p = GameObject.FindWithTag("Player");
-            if (p != null) player = p.transform;
-        }
-    }
-
-    void GenerateInitialChunks()
-    {
-        for (int dx = -renderDistance; dx <= renderDistance; dx++)
-        {
-            for (int dz = -renderDistance; dz <= renderDistance; dz++)
-            {
-                Vector2Int coord = currentChunk + new Vector2Int(dx, dz);
-                GameObject chunk = GenerateChunk(coord);
-                loadedChunks.Add(coord, chunk);
-                chunk.SetActive(Mathf.Abs(dx) <= viewDistance && Mathf.Abs(dz) <= viewDistance);
-            }
+            GameObject playerObj = GameObject.FindWithTag("Player");
+            if (playerObj != null)
+                player = playerObj.transform;
         }
     }
 
     void UpdateChunks()
     {
-        // Отключаем все чанки
-        foreach (var kvp in loadedChunks)
-            kvp.Value.SetActive(false);
+        HashSet<Vector2Int> needed = new();
 
-        // Включаем нужные и создаём недостающие
         for (int dx = -renderDistance; dx <= renderDistance; dx++)
         {
             for (int dz = -renderDistance; dz <= renderDistance; dz++)
             {
                 Vector2Int coord = currentChunk + new Vector2Int(dx, dz);
+                needed.Add(coord);
 
-                if (!loadedChunks.TryGetValue(coord, out GameObject chunk))
+                if (!loadedChunks.ContainsKey(coord))
                 {
-                    chunk = GenerateChunk(coord);
+                    GameObject chunk = GenerateChunk(coord);
                     loadedChunks.Add(coord, chunk);
                 }
 
-                bool visible = Mathf.Abs(dx) <= viewDistance && Mathf.Abs(dz) <= viewDistance;
-                chunk.SetActive(visible);
+                bool visible = (Mathf.Abs(dx) <= viewDistance) && (Mathf.Abs(dz) <= viewDistance);
+                SetChunkRender(loadedChunks[coord], visible);
             }
+        }
+
+        List<Vector2Int> toRemove = new();
+        foreach (var kvp in loadedChunks)
+        {
+            if (!needed.Contains(kvp.Key))
+            {
+                Destroy(kvp.Value);
+                toRemove.Add(kvp.Key);
+            }
+        }
+        foreach (var key in toRemove)
+            loadedChunks.Remove(key);
+    }
+
+    void SetChunkRender(GameObject chunk, bool visible)
+    {
+        if (chunk == null) return;
+        MeshRenderer[] renderers = chunk.GetComponentsInChildren<MeshRenderer>();
+        foreach (var r in renderers)
+        {
+            r.enabled = visible;
         }
     }
 
     GameObject GenerateChunk(Vector2Int chunkCoord)
     {
-        GameObject chunkGO = new($"Chunk_{chunkCoord.x}_{chunkCoord.y}");
-        chunkGO.transform.SetParent(mapParent, false);
+        GameObject chunkGO = new GameObject($"Chunk_{chunkCoord.x}_{chunkCoord.y}");
+        chunkGO.transform.parent = mapParent;
 
-        Vector3 origin = new(chunkCoord.x * chunkWorldSize, 0, chunkCoord.y * chunkWorldSize);
+        Vector3 chunkOrigin = new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize);
 
         // Пол
-        GameObject floor = planePool.Get(origin + new Vector3(chunkWorldSize / 2f - blockSize / 2f, -0.1f, chunkWorldSize / 2f - blockSize / 2f));
-        floor.transform.SetParent(chunkGO.transform);
+        if (planePrefab != null)
+        {
+            Vector3 floorPos = chunkOrigin + new Vector3((chunkSize * blockSize) / 2f - blockSize / 2f, -0.1f, (chunkSize * blockSize) / 2f - blockSize / 2f);
+            GameObject floor = Instantiate(planePrefab, floorPos, Quaternion.identity, chunkGO.transform);
+            floor.name = "ChunkFloor";
+        }
 
-        // Стены
+        HashSet<Vector3> occupied = new();
+
+        // Сначала ставим стены
         for (int x = 0; x < chunkSize; x++)
         {
             for (int z = 0; z < chunkSize; z++)
             {
-                if (Random.value < 0.3f)
+                if (Random.value < 0.3f && wallPrefab != null)
                 {
-                    Vector3 pos = origin + new Vector3(x * blockSize, 0, z * blockSize);
-                    GameObject wall = wallPool.Get(pos);
-                    wall.transform.SetParent(chunkGO.transform);
+                    Vector3 pos = chunkOrigin + new Vector3(x * blockSize, 0, z * blockSize);
+                    GameObject wall = Instantiate(wallPrefab, pos, Quaternion.identity, chunkGO.transform);
+                    wall.tag = "Wall";
+                    occupied.Add(pos);
                 }
             }
         }
 
-        // Бочки
+        // Теперь спавним бочки и рампы только в пустых местах
         for (int x = 0; x < chunkSize; x++)
         {
             for (int z = 0; z < chunkSize; z++)
             {
-                if (Random.value < 0.04f)
+                Vector3 pos = chunkOrigin + new Vector3(x * blockSize, 0, z * blockSize);
+                if (occupied.Contains(pos)) continue; // пропускаем, если занято стеной
+
+                if (Random.value < 0.03f && barrelPrefab != null)
                 {
-                    Vector3 pos = origin + new Vector3(x * blockSize, 0, z * blockSize);
-                    GameObject barrel = barrelPool.Get(pos);
-                    barrel.transform.SetParent(chunkGO.transform);
+                    Quaternion rot = Quaternion.Euler(0, Random.Range(0, 4) * 90f, 0);
+                    Instantiate(barrelPrefab, pos, rot, chunkGO.transform);
+                    occupied.Add(pos);
+                }
+
+                if (Random.value < 0.05f && rampPrefab != null)
+                {
+                    Quaternion rot = Quaternion.Euler(0, Random.Range(0, 4) * 90f, 0);
+                    Instantiate(rampPrefab, pos, rot, chunkGO.transform);
+                    occupied.Add(pos);
                 }
             }
         }
 
-        // Враги
+        // Спавним врагов (вне занятых позиций)
         int enemiesToSpawn = Random.Range(minEnemiesPerChunk, maxEnemiesPerChunk + 1);
+        HashSet<Vector3> usedPositions = new();
+
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            int sx = Random.Range(0, chunkSize);
-            int sz = Random.Range(0, chunkSize);
-            Vector3 pos = origin + new Vector3(sx * blockSize, 0, sz * blockSize);
-
-            GameObject enemy = enemyPool.Get(pos);
-            if (enemy.TryGetComponent(out AIEnemyTank ai))
-                ai.player = player;
-
-            enemy.transform.SetParent(chunkGO.transform);
+            if (enemyPrefab != null && i == 0 && enemiesToSpawn >= 3)
+            {
+                Vector3 centerPos = GetRandomSpawnPos(chunkOrigin, usedPositions, occupied);
+                SpawnEnemyFormation(centerPos, 3, chunkGO.transform, usedPositions);
+                i += 2;
+            }
+            else
+            {
+                Vector3 pos = GetRandomSpawnPos(chunkOrigin, usedPositions, occupied);
+                GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, chunkGO.transform);
+                var ai = enemy.GetComponent<AIEnemyTank>();
+                if (ai != null) ai.player = player;
+                usedPositions.Add(pos);
+            }
         }
 
         return chunkGO;
     }
 
-    Vector2Int GetChunkCoord(Vector3 pos)
+    Vector3 GetRandomSpawnPos(Vector3 chunkOrigin, HashSet<Vector3> used, HashSet<Vector3> occupied)
     {
-        return new(
-            Mathf.FloorToInt(pos.x / chunkWorldSize),
-            Mathf.FloorToInt(pos.z / chunkWorldSize)
-        );
-    }
-}
-
-/// <summary>
-/// Простой пул объектов, безопасный для WebGL / мобильных устройств
-/// </summary>
-public class ObjectPool
-{
-    private readonly GameObject prefab;
-    private readonly Transform parent;
-    private readonly Queue<GameObject> pool;
-
-    public ObjectPool(GameObject prefab, int initialCount, Transform parent)
-    {
-        this.prefab = prefab;
-        this.parent = parent;
-        pool = new Queue<GameObject>(initialCount);
-
-        for (int i = 0; i < initialCount; i++)
+        Vector3 spawnPos;
+        int attempts = 0;
+        do
         {
-            GameObject obj = Object.Instantiate(prefab, parent);
-            obj.SetActive(false);
-            pool.Enqueue(obj);
+            int sx = Random.Range(0, chunkSize);
+            int sz = Random.Range(0, chunkSize);
+            spawnPos = chunkOrigin + new Vector3(sx * blockSize, 0, sz * blockSize);
+            attempts++;
+        }
+        while ((occupied.Contains(spawnPos) || Physics.CheckSphere(spawnPos + Vector3.up, enemySpawnCheckRadius) || used.Contains(spawnPos)) && attempts < 20);
+
+        return spawnPos;
+    }
+
+    void SpawnEnemyFormation(Vector3 center, int count, Transform parent, HashSet<Vector3> used)
+    {
+        float spacing = 2f;
+        Vector3[] offsets;
+        if (count == 3)
+        {
+            offsets = new Vector3[]
+            {
+                Vector3.zero,
+                new Vector3(spacing, 0, 0),
+                new Vector3(spacing/2f, 0, spacing)
+            };
+        }
+        else
+        {
+            offsets = new Vector3[]
+            {
+                Vector3.zero,
+                new Vector3(spacing, 0, 0),
+                new Vector3(0, 0, spacing),
+                new Vector3(spacing, 0, spacing)
+            };
+        }
+
+        foreach (var off in offsets)
+        {
+            Vector3 pos = center + off;
+            GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, parent);
+            var ai = enemy.GetComponent<AIEnemyTank>();
+            if (ai != null) ai.player = player;
+            used.Add(pos);
         }
     }
 
-    public GameObject Get(Vector3 position)
+    Vector2Int GetChunkCoord(Vector3 position)
     {
-        GameObject obj = pool.Count > 0 ? pool.Dequeue() : Object.Instantiate(prefab, parent);
-        obj.transform.position = position;
-        obj.SetActive(true);
-        return obj;
-    }
-
-    public void Return(GameObject obj)
-    {
-        obj.SetActive(false);
-        pool.Enqueue(obj);
+        int cx = Mathf.FloorToInt(position.x / (chunkSize * blockSize));
+        int cz = Mathf.FloorToInt(position.z / (chunkSize * blockSize));
+        return new Vector2Int(cx, cz);
     }
 }

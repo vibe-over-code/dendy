@@ -1384,7 +1384,7 @@ Light:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingLayerMask: 1
-  m_Lightmapping: 2
+  m_Lightmapping: 4
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
@@ -2749,7 +2749,7 @@ Light:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingLayerMask: 1
-  m_Lightmapping: 2
+  m_Lightmapping: 4
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
@@ -3053,18 +3053,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   player: {fileID: 555239132}
-  mapParent: {fileID: 0}
-  chunkSize: 20
-  blockSize: 3
-  renderDistance: 3
-  viewDistance: 1
   wallPrefab: {fileID: 1132470141574907357, guid: 89b34928289caf94da2da0d42b78148c, type: 3}
   planePrefab: {fileID: 1208675347226591764, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
   barrelPrefab: {fileID: 1964431040936758, guid: ae95d385019def448981b67e58f4dcc2, type: 3}
+  rampPrefab: {fileID: 0}
   enemyPrefab: {fileID: 8275819348789627029, guid: 8f382308a55ae544c96acf092e156faa, type: 3}
   minEnemiesPerChunk: 1
   maxEnemiesPerChunk: 3
   enemySpawnCheckRadius: 1
+  chunkSize: 20
+  blockSize: 3
+  renderDistance: 3
+  viewDistance: 1
+  mapParent: {fileID: 1189740618}
 --- !u!4 &1189740618
 Transform:
   m_ObjectHideFlags: 0
@@ -4176,7 +4177,6 @@ MonoBehaviour:
   pulseAmount: 0.2
   bottomMargin: 100
   letterSpacing: 1.2
-  mobileTestMode: 0
 --- !u!4 &1957909180
 Transform:
   m_ObjectHideFlags: 0
