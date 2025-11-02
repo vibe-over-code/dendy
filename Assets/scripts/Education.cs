@@ -2,6 +2,7 @@
 using TMPro;
 using System.Collections.Generic;
 using UnityEngine.UI;
+using YG; // 👈 добавляем поддержку YandexGame
 
 [System.Serializable]
 public class KeyBlock
@@ -23,6 +24,10 @@ public class Education : MonoBehaviour
     public float bottomMargin = 150f;
     public float letterSpacing = 1.3f;
 
+    [Header("Mobile Settings")]
+    [Tooltip("Принудительно отключить обучение, если тестируем мобильную версию.")]
+    public bool mobileTestMode = false;
+
     private Canvas canvas;
     private RectTransform panel;
     private Dictionary<KeyCode, TMP_Text> currentKeyTexts = new Dictionary<KeyCode, TMP_Text>();
@@ -33,16 +38,28 @@ public class Education : MonoBehaviour
 
     void Awake()
     {
-        Localizator loc = FindObjectOfType<Localizator>();
-        if (loc != null)
-            loc.Initialize();
-        // Проверяем PlayerPrefs — если обучение пройдено, не показываем
+        // --- Проверка устройства ---
+        bool isMobile = mobileTestMode || Application.isMobilePlatform;
+        if (isMobile)
+        {
+            Debug.Log("[Education] Обучение отключено — мобильное устройство.");
+            Destroy(gameObject);
+            return;
+        }
+
+        // --- Проверка, проходилось ли обучение ранее ---
         if (PlayerPrefs.GetInt(PREFS_KEY, 0) == 1)
         {
             Destroy(gameObject);
             return;
         }
 
+        // --- Локализация ---
+        Localizator loc = FindObjectOfType<Localizator>();
+        if (loc != null)
+            loc.Initialize();
+
+        // --- Запуск обучения ---
         CreateUI();
         ShowCurrentBlock();
     }
@@ -53,7 +70,7 @@ public class Education : MonoBehaviour
 
         pulseTimer += Time.deltaTime * pulseSpeed;
 
-        // Пульсация текста
+        // Эффект пульсации
         foreach (var kvp in currentKeyTexts)
         {
             TMP_Text t = kvp.Value;
@@ -64,7 +81,7 @@ public class Education : MonoBehaviour
             }
         }
 
-        // Проверка нажатий
+        // Проверка нажатий клавиш
         for (int i = keyBlocks[currentBlockIndex].keys.Count - 1; i >= 0; i--)
         {
             KeyCode key = keyBlocks[currentBlockIndex].keys[i];
@@ -77,7 +94,7 @@ public class Education : MonoBehaviour
             }
         }
 
-        // ⏭Переход к следующему блоку
+        // Переход к следующему блоку
         if (keyBlocks[currentBlockIndex].keys.Count == 0)
         {
             currentBlockIndex++;
@@ -85,7 +102,6 @@ public class Education : MonoBehaviour
                 ShowCurrentBlock();
             else
             {
-                // ✅ Обучение завершено
                 PlayerPrefs.SetInt(PREFS_KEY, 1);
                 PlayerPrefs.Save();
                 Destroy(gameObject);
@@ -95,7 +111,6 @@ public class Education : MonoBehaviour
 
     void CreateUI()
     {
-        // Canvas
         GameObject canvasGO = new GameObject("EducationCanvas");
         canvasGO.layer = LayerMask.NameToLayer("UI");
         canvas = canvasGO.AddComponent<Canvas>();
@@ -107,7 +122,6 @@ public class Education : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920, 1080);
         canvasGO.AddComponent<GraphicRaycaster>();
 
-        // Панель
         GameObject panelGO = new GameObject("KeysPanel");
         panelGO.transform.SetParent(canvas.transform, false);
         panel = panelGO.AddComponent<RectTransform>();
@@ -121,14 +135,13 @@ public class Education : MonoBehaviour
     void ShowCurrentBlock()
     {
         currentKeyTexts.Clear();
-
         if (currentBlockIndex >= keyBlocks.Count) return;
-        List<KeyCode> block = keyBlocks[currentBlockIndex].keys;
 
+        List<KeyCode> block = keyBlocks[currentBlockIndex].keys;
         float keyBlockWidth = fontSize * letterSpacing;
         float extraSpaceWidth = keyBlockWidth * 4f;
-
         float totalWidth = 0f;
+
         foreach (KeyCode k in block)
             totalWidth += (k == KeyCode.Space ? extraSpaceWidth : keyBlockWidth);
 
@@ -148,9 +161,7 @@ public class Education : MonoBehaviour
             text.alignment = TextAlignmentOptions.Center;
             text.raycastTarget = false;
 
-            // Получаем локализованный текст по ключу вида "edu_Space" или "edu_W"
             string locKey = key.ToString();
-            Debug.Log($"KeyCode {key} => locKey = '{key.ToString()}'");
             string localized = Localizator.Get(locKey);
             text.text = string.IsNullOrEmpty(localized) ? key.ToString().ToUpper() : localized;
 
