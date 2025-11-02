@@ -119,55 +119,62 @@ public class MapGenerator : MonoBehaviour
             floor.name = "ChunkFloor";
         }
 
-        // Стены, бочки, рампы
+        HashSet<Vector3> occupied = new();
+
+        // Сначала ставим стены
+        for (int x = 0; x < chunkSize; x++)
+        {
+            for (int z = 0; z < chunkSize; z++)
+            {
+                if (Random.value < 0.3f && wallPrefab != null)
+                {
+                    Vector3 pos = chunkOrigin + new Vector3(x * blockSize, 0, z * blockSize);
+                    GameObject wall = Instantiate(wallPrefab, pos, Quaternion.identity, chunkGO.transform);
+                    wall.tag = "Wall";
+                    occupied.Add(pos);
+                }
+            }
+        }
+
+        // Теперь спавним бочки и рампы только в пустых местах
         for (int x = 0; x < chunkSize; x++)
         {
             for (int z = 0; z < chunkSize; z++)
             {
                 Vector3 pos = chunkOrigin + new Vector3(x * blockSize, 0, z * blockSize);
+                if (occupied.Contains(pos)) continue; // пропускаем, если занято стеной
 
-                // Стена
-                if (Random.value < 0.3f)
-                {
-                    if (wallPrefab != null)
-                    {
-                        GameObject wall = Instantiate(wallPrefab, pos, Quaternion.identity, chunkGO.transform);
-                        wall.tag = "Wall";
-                    }
-                }
-
-                // Бочка
-                if (Random.value < 0.1f && barrelPrefab != null)
+                if (Random.value < 0.03f && barrelPrefab != null)
                 {
                     Quaternion rot = Quaternion.Euler(0, Random.Range(0, 4) * 90f, 0);
                     Instantiate(barrelPrefab, pos, rot, chunkGO.transform);
+                    occupied.Add(pos);
                 }
 
-                // Рампа
                 if (Random.value < 0.05f && rampPrefab != null)
                 {
                     Quaternion rot = Quaternion.Euler(0, Random.Range(0, 4) * 90f, 0);
                     Instantiate(rampPrefab, pos, rot, chunkGO.transform);
+                    occupied.Add(pos);
                 }
             }
         }
 
-        // Спавн врагов (формирования)
+        // Спавним врагов (вне занятых позиций)
         int enemiesToSpawn = Random.Range(minEnemiesPerChunk, maxEnemiesPerChunk + 1);
         HashSet<Vector3> usedPositions = new();
 
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            // Формируем треугольник из 3-4 танков
             if (enemyPrefab != null && i == 0 && enemiesToSpawn >= 3)
             {
-                Vector3 centerPos = GetRandomSpawnPos(chunkOrigin, usedPositions);
+                Vector3 centerPos = GetRandomSpawnPos(chunkOrigin, usedPositions, occupied);
                 SpawnEnemyFormation(centerPos, 3, chunkGO.transform, usedPositions);
-                i += 2; // пропускаем 2, т.к. треугольник уже добавлен
+                i += 2;
             }
             else
             {
-                Vector3 pos = GetRandomSpawnPos(chunkOrigin, usedPositions);
+                Vector3 pos = GetRandomSpawnPos(chunkOrigin, usedPositions, occupied);
                 GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, chunkGO.transform);
                 var ai = enemy.GetComponent<AIEnemyTank>();
                 if (ai != null) ai.player = player;
@@ -178,7 +185,7 @@ public class MapGenerator : MonoBehaviour
         return chunkGO;
     }
 
-    Vector3 GetRandomSpawnPos(Vector3 chunkOrigin, HashSet<Vector3> usedPositions)
+    Vector3 GetRandomSpawnPos(Vector3 chunkOrigin, HashSet<Vector3> used, HashSet<Vector3> occupied)
     {
         Vector3 spawnPos;
         int attempts = 0;
@@ -189,14 +196,13 @@ public class MapGenerator : MonoBehaviour
             spawnPos = chunkOrigin + new Vector3(sx * blockSize, 0, sz * blockSize);
             attempts++;
         }
-        while ((Physics.CheckSphere(spawnPos + Vector3.up, enemySpawnCheckRadius) || usedPositions.Contains(spawnPos)) && attempts < 20);
+        while ((occupied.Contains(spawnPos) || Physics.CheckSphere(spawnPos + Vector3.up, enemySpawnCheckRadius) || used.Contains(spawnPos)) && attempts < 20);
 
         return spawnPos;
     }
 
-    void SpawnEnemyFormation(Vector3 center, int count, Transform parent, HashSet<Vector3> usedPositions)
+    void SpawnEnemyFormation(Vector3 center, int count, Transform parent, HashSet<Vector3> used)
     {
-        // Расставляем танки треугольником
         float spacing = 2f;
         Vector3[] offsets;
         if (count == 3)
@@ -208,7 +214,7 @@ public class MapGenerator : MonoBehaviour
                 new Vector3(spacing/2f, 0, spacing)
             };
         }
-        else // 4 танка
+        else
         {
             offsets = new Vector3[]
             {
@@ -225,7 +231,7 @@ public class MapGenerator : MonoBehaviour
             GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, parent);
             var ai = enemy.GetComponent<AIEnemyTank>();
             if (ai != null) ai.player = player;
-            usedPositions.Add(pos);
+            used.Add(pos);
         }
     }
 

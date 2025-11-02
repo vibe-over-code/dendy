@@ -14,7 +14,9 @@
     "S": "S",
     "A": "A",
     "D": "D",
-    "Space": "SPACE"
+    "Space": "SPACE",
+    "Volume":"Volume",
+    "Settings":"Settings"
   },
   "ru": {
     "play": "Играть",
@@ -31,6 +33,8 @@
     "S": "Ы",
     "A": "Ф",
     "D": "В",
-    "Space": "Пробел"
+    "Space": "Пробел",
+    "Volume":"Громкость",
+    "Settings":"Настройки"
   }
 }
