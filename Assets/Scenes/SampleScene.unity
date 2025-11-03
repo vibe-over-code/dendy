@@ -240,6 +240,63 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3931953}
   m_CullTransparentMesh: 1
+--- !u!1001 &68502925
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1208675347226591764, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_Name
+      value: Plane
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 3.6068056
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.00000023841858
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -0.13014364
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8949593428740980293, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
 --- !u!1 &108331475
 GameObject:
   m_ObjectHideFlags: 0
@@ -1542,10 +1599,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   moveSpeed: 5
-  bulletPrefab: {fileID: 4888237122490989046, guid: c7b87e474a91c2d459ed2c82c133da46, type: 3}
   explosionPrefab: {fileID: 104829970813648393, guid: d3015b7eea383f64d8b81f965cc466e7, type: 3}
   firePoint: {fileID: 745744635}
-  bulletForce: 20
+  explosionPrefabBarrel: {fileID: 191186, guid: 079954accd64b32419ec069129c81273, type: 3}
+  innerRadius: 2
+  outerRadius: 5
+  explosionForce: 700
+  upwardsModifier: 0
+  explosionMask:
+    serializedVersion: 2
+    m_Bits: 0
+  maxShootDistance: 100
+  shootableMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  trailPrefab: {fileID: 0}
+  trailDuration: 0.1
   mobileTestMode: 0
 --- !u!4 &555239132 stripped
 Transform:
@@ -3053,19 +3122,23 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   player: {fileID: 555239132}
-  wallPrefab: {fileID: 1132470141574907357, guid: 89b34928289caf94da2da0d42b78148c, type: 3}
-  planePrefab: {fileID: 1208675347226591764, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+  wallMaterial: {fileID: 2100000, guid: d1f1bd62e6112bc47beaa54e200de532, type: 2}
   barrelPrefab: {fileID: 1964431040936758, guid: ae95d385019def448981b67e58f4dcc2, type: 3}
-  rampPrefab: {fileID: 0}
   enemyPrefab: {fileID: 8275819348789627029, guid: 8f382308a55ae544c96acf092e156faa, type: 3}
   minEnemiesPerChunk: 1
   maxEnemiesPerChunk: 3
   enemySpawnCheckRadius: 1
   chunkSize: 20
   blockSize: 3
-  renderDistance: 3
+  renderDistance: 2
   viewDistance: 1
   mapParent: {fileID: 1189740618}
+  singleFloorPrefab: {fileID: 1512489666}
+  invertForward: 1
+  invertBack: 1
+  invertRight: 0
+  invertLeft: 0
+  invertUp: 0
 --- !u!4 &1189740618
 Transform:
   m_ObjectHideFlags: 0
@@ -3615,6 +3688,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6b4aaa8f02b3e6d47b341f16af1fade4, type: 3}
+--- !u!1 &1512489666 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1208675347226591764, guid: 8b50eb7ba6e092c409074e820ca79616, type: 3}
+  m_PrefabInstance: {fileID: 68502925}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1546926431
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -4177,6 +4255,7 @@ MonoBehaviour:
   pulseAmount: 0.2
   bottomMargin: 100
   letterSpacing: 1.2
+  mobileTestMode: 0
 --- !u!4 &1957909180
 Transform:
   m_ObjectHideFlags: 0
@@ -4251,3 +4330,4 @@ SceneRoots:
   - {fileID: 1957909180}
   - {fileID: 149466272}
   - {fileID: 1424367622}
+  - {fileID: 68502925}

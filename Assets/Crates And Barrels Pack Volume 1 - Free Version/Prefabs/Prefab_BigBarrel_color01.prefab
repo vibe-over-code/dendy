@@ -11,10 +11,10 @@ GameObject:
   - component: {fileID: 4091498853008650}
   - component: {fileID: 33702387072499252}
   - component: {fileID: 23684315849378316}
-  - component: {fileID: 5115503986991120975}
+  - component: {fileID: 1351290688031790888}
   m_Layer: 0
   m_Name: Mod_BigBarrel
-  m_TagString: Untagged
+  m_TagString: Barrel
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -87,7 +87,7 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!136 &5115503986991120975
+--- !u!136 &1351290688031790888
 CapsuleCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -106,7 +106,7 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.44726193
+  m_Radius: 0.48
   m_Height: 1.0234975
   m_Direction: 1
   m_Center: {x: -0.00000013411045, y: 0.51174873, z: -0.00000014901161}

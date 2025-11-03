@@ -1,16 +1,39 @@
 using UnityEngine;
 using YG; // YandexGame 2.x
+using System.Linq; // Для LINQ (FindFirstOf)
 
 public class PlayerController : MonoBehaviour
 {
+    // *** НОВЫЕ ССЫЛКИ ***
+    private MapGenerator mapGenerator;
+
     [Header("Movement")]
     public float moveSpeed = 5f;
 
-    [Header("Shooting")]
-    public GameObject bulletPrefab;
+    [Header("Shooting - Raycast")]
+    // Убираем bulletPrefab, но оставляем explosionPrefab для эффектов на месте попадания
     public GameObject explosionPrefab;
     public Transform firePoint;
-    public float bulletForce = 20f;
+
+    [Header("Explosion Settings")]
+    public GameObject explosionPrefabBarrel; // Префаб для мощного взрыва
+    public float innerRadius = 2f;       // ближний радиус — уничтожение
+    public float outerRadius = 5f;       // дальний радиус — физический толчок
+    public float explosionForce = 700f; // сила толчка
+    public float upwardsModifier = 0f;  // вертикальная составляющая
+    public LayerMask explosionMask;
+
+    // **ВАЖНО:** Теперь это не force (сила), а дальность стрельбы
+    [Tooltip("Максимальная дальность луча стрельбы")]
+    public float maxShootDistance = 100f;
+
+    // С какими объектами будем взаимодействовать
+    public LayerMask shootableMask;
+
+    [Header("Visuals")]
+    [Tooltip("Префаб следа (должен содержать LineRenderer)")]
+    public GameObject trailPrefab;
+    public float trailDuration = 0.1f; // Как долго виден след
 
     [Header("Mobile Settings")]
     [Tooltip("Включить мобильное управление вручную для теста в редакторе.")]
@@ -27,6 +50,13 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
+        // Ищем MapGenerator
+        mapGenerator = FindObjectOfType<MapGenerator>();
+        if (mapGenerator == null)
+        {
+            Debug.LogError("MapGenerator не найден! Разрушаемость блоков работать не будет.");
+        }
+
         // Определение устройства через YG2 + ручная галочка
         isMobile = mobileTestMode || Application.isMobilePlatform;
         joystickCenter = new Vector2(150, 150);
@@ -34,6 +64,7 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        // ... (Код HandleTouchInput и HandleKeyboardInput без изменений)
         if (isMobile)
         {
             HandleTouchInput();
@@ -46,6 +77,8 @@ public class PlayerController : MonoBehaviour
         if (moveDirection != Vector3.zero)
         {
             transform.forward = moveDirection;
+            // Используем CharacterController или Rigidbody для движения, 
+            // чтобы не провалиться сквозь пол. (Здесь используется прямое смещение)
             transform.position += moveDirection * moveSpeed * Time.deltaTime;
         }
     }
@@ -62,8 +95,10 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    // ... (Код HandleTouchInput без изменений)
     void HandleTouchInput()
     {
+        // ... (весь код джойстика)
         moveDirection = Vector3.zero;
 
         if (Input.touchCount > 0)
@@ -133,21 +168,170 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+
+    /// <summary>
+    /// Выстрел лучом (Raycast)
+    /// </summary>
     void Shoot()
     {
-        if (firePoint == null || bulletPrefab == null) return;
+        if (firePoint == null) return;
 
-        GameObject bullet = Instantiate(bulletPrefab, firePoint.position, transform.rotation);
-        Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
-        bulletRb.linearVelocity = transform.forward * bulletForce;
+        RaycastHit hit;
 
-        bullet bulletScript = bullet.GetComponent<bullet>();
-        if (bulletScript != null)
+        // 1. Выпускаем луч от точки выстрела в направлении forward
+        if (Physics.Raycast(firePoint.position, transform.forward, out hit, maxShootDistance, shootableMask))
         {
-            bulletScript.explosionPrefab = explosionPrefab;
+            // Успешное попадание!
+
+            // 2. Обрабатываем логику попадания
+            HandleRaycastHit(hit);
+
+            // 3. Рисуем след до точки попадания
+            DrawTrail(firePoint.position, hit.point);
+        }
+        else
+        {
+            // 4. Промах. Рисуем след на максимальную дистанцию
+            Vector3 endPoint = firePoint.position + transform.forward * maxShootDistance;
+            DrawTrail(firePoint.position, endPoint);
         }
     }
 
+    // ... (после DrawTrail)
+
+    /// <summary>
+    /// Логика взрыва бочки (удаление/отбрасывание объектов)
+    /// </summary>
+    void ExplodeBarrel(Vector3 explosionCenter)
+    {
+        // Создаем визуальный эффект
+        if (explosionPrefabBarrel != null)
+            Instantiate(explosionPrefabBarrel, explosionCenter, Quaternion.identity);
+
+        // Находим все объекты в радиусе outerRadius
+        // Используем Physics.OverlapSphereNonAlloc для оптимизации, 
+        // но оставим OverlapSphere, так как код требует минимальных изменений
+        Collider[] hits = Physics.OverlapSphere(explosionCenter, outerRadius, explosionMask);
+
+        foreach (var hit in hits)
+        {
+            GameObject affectedGO = hit.gameObject;
+            // Игнорируем сам триггер взрыва или другие частицы
+            if (affectedGO.CompareTag("Untagged")) continue;
+
+            float dist = Vector3.Distance(explosionCenter, affectedGO.transform.position);
+
+            // --- Внутренний радиус: Стены, Бочки, Враги — уничтожаем ---
+            if (dist <= innerRadius)
+            {
+                // Если попадаем в бочку или врага - уничтожаем напрямую.
+                if (affectedGO.CompareTag("Enemy") || affectedGO.CompareTag("Barrel"))
+                {
+                    Destroy(affectedGO);
+                    continue;
+                }
+                // Если попадаем в СТЕНУ, просим MapGenerator удалить блок.
+                else if (affectedGO.CompareTag("Wall"))
+                {
+                    if (mapGenerator != null)
+                    {
+                        // 💥 ИСПРАВЛЕНИЕ: Мы не можем использовать affectedGO.transform.position,
+                        // потому что это позиция родительского чанка (0, 0, 0). 
+                        // Вместо этого используем центр взрыва, чтобы определить блок.
+                        mapGenerator.RemoveBlock(explosionCenter);
+                    }
+                    // После удаления стены она исчезнет при следующем кадре.
+                    continue;
+                }
+            }
+
+            // --- Внешний радиус (для всех, включая игрока): физический толчок ---
+            Rigidbody rb = hit.attachedRigidbody;
+
+            // Проверяем, есть ли Rigidbody (нужен для игрока, чтобы его отбросило)
+            if (rb != null)
+            {
+                // Сила затухает от центра
+                float t = Mathf.Clamp01(1f - (dist / outerRadius));
+                float force = explosionForce * t;
+                rb.AddExplosionForce(force, explosionCenter, outerRadius, upwardsModifier, ForceMode.Impulse);
+            }
+        }
+    }
+    // ...
+
+    /// <summary>
+    /// Логика обработки попадания (аналог OnCollisionEnter из пули)
+    /// </summary>
+    void HandleRaycastHit(RaycastHit hit)
+    {
+        GameObject go = hit.collider.gameObject;
+
+        // --- Попадание в стену или бочку ---
+        if (go.CompareTag("Wall") || go.CompareTag("Barrel"))
+        {
+            // Добавляем маленький эффект попадания для всех разрушаемых объектов
+            if (explosionPrefab != null)
+                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
+
+            if (go.CompareTag("Barrel"))
+            {
+                // 💥 БОЧКА ВЗРЫВАЕТСЯ!
+                // 1. Вызываем взрыв (чтобы разрушить окружение)
+                ExplodeBarrel(hit.point);
+
+                // 2. Уничтожаем саму бочку (ее префаб-объект)
+                Destroy(go);
+            }
+            else // Стена
+            {
+                if (mapGenerator != null)
+                {
+                    // Стены удаляем через MapGenerator
+                    mapGenerator.RemoveBlock(hit.point);
+                }
+            }
+        }
+        // --- Попадание во врага ---
+        else if (go.CompareTag("Enemy"))
+        {
+            if (explosionPrefab != null)
+                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
+
+            Destroy(go); // Убиваем врага
+        }
+        // --- Попадание в другие объекты ---
+        else
+        {
+            if (explosionPrefab != null)
+                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
+        }
+    }
+
+    // ... (Код DrawTrail и OnGUI без изменений)
+    /// <summary>
+    /// Создает визуальный след с помощью LineRenderer.
+    /// </summary>
+    void DrawTrail(Vector3 startPoint, Vector3 endPoint)
+    {
+        if (trailPrefab == null) return;
+
+        // Создаем объект следа
+        GameObject trail = Instantiate(trailPrefab, startPoint, Quaternion.identity);
+        LineRenderer lr = trail.GetComponent<LineRenderer>();
+
+        if (lr != null)
+        {
+            lr.positionCount = 2;
+            lr.SetPosition(0, startPoint);
+            lr.SetPosition(1, endPoint);
+        }
+
+        // Уничтожаем след через короткое время, чтобы он не висел вечно
+        Destroy(trail, trailDuration);
+    }
+
+    // ... (Код OnGUI без изменений)
     void OnGUI()
     {
         if (!isMobile) return;
