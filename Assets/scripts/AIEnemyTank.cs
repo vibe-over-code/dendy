@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class AIEnemyTank : MonoBehaviour
 {
@@ -12,6 +13,10 @@ public class AIEnemyTank : MonoBehaviour
     [Range(0f, 1f)] public float accuracy = 0.9f;
     public float detectionRadius = 30f;
     public float wallCheckDistance = 5f;
+    public int shotDistance = 5;
+
+    public MapGenerator mapGenerator;
+    public PlayerController playerController;
 
     private float shootTimer;
     private Quaternion targetRotation;
@@ -58,11 +63,13 @@ public class AIEnemyTank : MonoBehaviour
             // Если видит стену — стреляет в неё
             if (blocked && hit.collider.CompareTag("Wall"))
             {
+                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
                 Shoot();
                 shootTimer = shootCooldown;
             }
             else if (distance <= detectionRadius)
             {
+                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
                 // Стреляет по игроку
                 Shoot();
                 shootTimer = shootCooldown;
@@ -72,42 +79,64 @@ public class AIEnemyTank : MonoBehaviour
 
     void Shoot()
     {
-        if (!bulletPrefab || !firePoint) return;
+        if (!firePoint) return;
 
+        // 1. Рассчитываем направление с учетом неточности
         Vector3 shootDir = transform.forward;
         if (accuracy < 1f)
         {
-            float maxAngle = (1f - accuracy) * 15f;
+            float maxAngle = (1f - accuracy) * 10f; // Угол разброса
+
+            // Применяем неточность. Вращение только по Y (горизонталь) для простоты.
+            // Если танк может стрелять вверх/вниз, используйте 3D-вращение.
             shootDir = Quaternion.Euler(
-                Random.Range(-maxAngle, maxAngle),
-                Random.Range(-maxAngle, maxAngle),
+                0, // Y-компонента
+                Random.Range(-maxAngle, maxAngle), // Горизонтальное отклонение
                 0) * shootDir;
         }
 
-        GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.LookRotation(shootDir));
-        Rigidbody rb = bullet.GetComponent<Rigidbody>();
-        rb.linearVelocity = shootDir * bulletForce;
+        // 2. Выпускаем Raycast
+        RaycastHit hit;
+        if (Physics.Raycast(firePoint.position, shootDir, out hit, shotDistance))
+        {
+            // Визуализация луча (для отладки)
+            Debug.DrawRay(firePoint.position, shootDir * hit.distance, Color.red, 0.5f);
 
-        var b = bullet.GetComponent<bullet>();
-        if (b != null)
-            b.explosionPrefab = explosionPrefab;
+            GameObject affectedGO = hit.collider.gameObject;
+
+            // 3. Обрабатываем попадание
+
+            if (affectedGO.CompareTag("Player"))
+            {
+                string currentSceneName = SceneManager.GetActiveScene().name;
+                // Перезагружаем текущую сцену
+                SceneManager.LoadScene(currentSceneName);
+                Debug.Log("AI попал в игрока!");
+            }
+            else if (affectedGO.CompareTag("Wall") && mapGenerator != null)
+            {
+                // Разрушение стены: используем логику из MapGenerator
+                Vector3 insidePoint = hit.point - hit.normal * 0.1f;
+                mapGenerator.RemoveBlock(insidePoint);
+                Debug.Log("AI разрушил стену!");
+            }
+            else if (affectedGO.CompareTag("Barrel") && playerController != null)
+            {
+                // Взрыв бочки: переиспользуем метод игрока.
+                playerController.ExplodeBarrel(affectedGO.transform.position);
+                Destroy(affectedGO); // Бочка уничтожается
+                Debug.Log("AI взорвал бочку!");
+            }
+        }
+        else
+        {
+            // Если промахнулись (для отладки)
+            Debug.DrawRay(firePoint.position, shootDir * shotDistance, Color.yellow, 0.5f);
+        }
     }
 
     public void TakeDamage()
     {
         Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter(Collider other)
-    {
-        if (other.CompareTag("Bullet"))
-        {
-            TakeDamage();
-            Destroy(other.gameObject);
-        }
-        else if (other.CompareTag("Wall"))
-        {
-            Destroy(other.gameObject);
-        }
     }
 }

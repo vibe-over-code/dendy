@@ -16,7 +16,11 @@
     "D": "D",
     "Space": "SPACE",
     "Volume":"Volume",
-    "Settings":"Settings"
+    "Settings":"Settings",
+    "Volumesfx":"SFX Volume",
+    "tap":"tap",
+    "swipe":"swipe",
+    "space":" "
   },
   "ru": {
     "play": "Играть",
@@ -34,7 +38,11 @@
     "A": "Ф",
     "D": "В",
     "Space": "Пробел",
-    "Volume":"Громкость",
-    "Settings":"Настройки"
+    "Volume":"Громкость музыки",
+    "Settings":"Настройки",
+    "Volumesfx":"Громкость эффектов",
+    "tap":"Нажми",
+    "swipe":"свайп",
+    "space":" "
   }
 }

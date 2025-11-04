@@ -12,6 +12,13 @@ public class PlayerController : MonoBehaviour
     [Header("Shooting - Raycast")]
     public GameObject explosionPrefab;
     public Transform firePoint;
+    [Header("Настройки трассера (Эмуляция полета)")]
+    public Material trailMaterial;
+    public float trailSpeed = 50f;     // Скорость полета трассера
+    public float trailLength = 0.5f;   // Длина видимого трассера
+    public float trailDuration = 0.5f; // Время жизни объекта (чтобы избежать мусора)
+    public Color trailColor = Color.yellow;
+    public float trailWidth = 0.2f;
 
     [Header("Explosion Settings")]
     public GameObject explosionPrefabBarrel; // Префаб для мощного взрыва
@@ -30,11 +37,6 @@ public class PlayerController : MonoBehaviour
 
     // С какими объектами будем взаимодействовать
     public LayerMask shootableMask;
-
-    [Header("Visuals")]
-    [Tooltip("Префаб следа (должен содержать LineRenderer)")]
-    public GameObject trailPrefab;
-    public float trailDuration = 0.1f; // Как долго виден след
 
     [Header("Mobile Settings")]
     [Tooltip("Включить мобильное управление вручную для теста в редакторе.")]
@@ -359,21 +361,29 @@ public class PlayerController : MonoBehaviour
     // Создает визуальный след с помощью LineRenderer.
     void DrawTrail(Vector3 startPoint, Vector3 endPoint)
     {
-        if (trailPrefab == null) return;
-
-        // Создаем объект следа
-        GameObject trail = Instantiate(trailPrefab, startPoint, Quaternion.identity);
-        LineRenderer lr = trail.GetComponent<LineRenderer>();
-
-        if (lr != null)
+        if (trailMaterial == null)
         {
-            lr.positionCount = 2;
-            lr.SetPosition(0, startPoint);
-            lr.SetPosition(1, endPoint);
+            Debug.LogWarning("Trail Material не установлен!");
+            return;
         }
 
-        // Уничтожаем след через короткое время, чтобы он не висел вечно
-        Destroy(trail, trailDuration);
+        // --- Создание объекта трассера ---
+        GameObject trailGO = new GameObject("ProjectileTrail");
+
+        // Получаем наш новый скрипт
+        ProjectileTrail trail = trailGO.AddComponent<ProjectileTrail>();
+
+        // Инициализируем его параметрами полета
+        trail.Initialize(
+            startPoint,
+            endPoint,
+            trailSpeed,
+            trailLength,
+            trailWidth,
+            trailColor,
+            trailMaterial,
+            trailDuration // Используем trailDuration как время, после которого объект уничтожится
+        );
     }
 
     void OnGUI()

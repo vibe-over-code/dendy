@@ -141,10 +141,13 @@ MonoBehaviour:
   explosionPrefab: {fileID: 104829970813648393, guid: d3015b7eea383f64d8b81f965cc466e7, type: 3}
   firePoint: {fileID: 2501047259187907152}
   bulletForce: 20
-  shootCooldown: 3
-  accuracy: 0.5
+  shootCooldown: 2
+  accuracy: 0.708
   detectionRadius: 30
-  wallCheckDistance: 5
+  wallCheckDistance: 10
+  shotDistance: 10
+  mapGenerator: {fileID: 0}
+  playerController: {fileID: 0}
 --- !u!64 &5938598524845354073
 MeshCollider:
   m_ObjectHideFlags: 0
