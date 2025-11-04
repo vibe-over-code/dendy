@@ -4,14 +4,12 @@ using System.Linq; // Для LINQ (FindFirstOf)
 
 public class PlayerController : MonoBehaviour
 {
-    // *** НОВЫЕ ССЫЛКИ ***
     private MapGenerator mapGenerator;
 
     [Header("Movement")]
     public float moveSpeed = 5f;
 
     [Header("Shooting - Raycast")]
-    // Убираем bulletPrefab, но оставляем explosionPrefab для эффектов на месте попадания
     public GameObject explosionPrefab;
     public Transform firePoint;
 
@@ -22,6 +20,9 @@ public class PlayerController : MonoBehaviour
     public float explosionForce = 700f; // сила толчка
     public float upwardsModifier = 0f;  // вертикальная составляющая
     public LayerMask explosionMask;
+    public float explosionRadius = 5f; // Используйте этот радиус вместо innerRadius
+    public int rayCount = 16;         // Сколько лучей выпустить по кругу
+    public float rayHeight = 0.5f;    // Высота, с которой исходят лучи (чтобы не застряли в полу)
 
     // **ВАЖНО:** Теперь это не force (сила), а дальность стрельбы
     [Tooltip("Максимальная дальность луча стрельбы")]
@@ -169,9 +170,9 @@ public class PlayerController : MonoBehaviour
     }
 
 
-    /// <summary>
-    /// Выстрел лучом (Raycast)
-    /// </summary>
+
+    // Выстрел лучом (Raycast)
+
     void Shoot()
     {
         if (firePoint == null) return;
@@ -197,101 +198,148 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // ... (после DrawTrail)
 
-    /// <summary>
-    /// Логика взрыва бочки (удаление/отбрасывание объектов)
-    /// </summary>
-    void ExplodeBarrel(Vector3 explosionCenter)
+    // Логика взрыва бочки (удаление/отбрасывание объектов)
+    public void ExplodeBarrel(Vector3 explosionCenter)
     {
-        // Создаем визуальный эффект
+        Debug.Log($"💥 Взрыв бочки в ({explosionCenter.x:F2}, {explosionCenter.y:F2}, {explosionCenter.z:F2}), радиус: {explosionRadius}");
+
+        // =======================================================
+        // I. СПАВН ЭФФЕКТА ВЗРЫВА
+        // =======================================================
         if (explosionPrefabBarrel != null)
-            Instantiate(explosionPrefabBarrel, explosionCenter, Quaternion.identity);
+        {
+            // Создаем эффект чуть выше земли, чтобы он не проваливался
+            GameObject explosion = Instantiate(
+                explosionPrefabBarrel,
+                explosionCenter + Vector3.up * 0.1f, // Немного поднять
+                Quaternion.identity
+            );
 
-        // Находим все объекты в радиусе outerRadius
-        // Используем Physics.OverlapSphereNonAlloc для оптимизации, 
-        // но оставим OverlapSphere, так как код требует минимальных изменений
-        Collider[] hits = Physics.OverlapSphere(explosionCenter, outerRadius, explosionMask);
+            // Уничтожаем эффект через 2 секунды, если система частиц сама не самоуничтожается
+            Destroy(explosion, 5f);
+        }
 
-        foreach (var hit in hits)
+        // =======================================================
+        // II. ОБНАРУЖЕНИЕ ОБЪЕКТОВ и НАНЕСЕНИЕ УРОНА (OverlapSphere)
+        // =======================================================
+
+        // OverlapSphere находит все объекты для нанесения урона/удаления бочек
+        Collider[] damageHits = Physics.OverlapSphere(explosionCenter, explosionRadius);
+
+        foreach (var hit in damageHits)
         {
             GameObject affectedGO = hit.gameObject;
-            // Игнорируем сам триггер взрыва или другие частицы
-            if (affectedGO.CompareTag("Untagged")) continue;
-
             float dist = Vector3.Distance(explosionCenter, affectedGO.transform.position);
+            string tag = affectedGO.tag;
 
-            // --- Внутренний радиус: Стены, Бочки, Враги — уничтожаем ---
-            if (dist <= innerRadius)
+            
+            if (tag == "Barrel" && dist <= explosionRadius)
             {
-                // Если попадаем в бочку или врага - уничтожаем напрямую.
-                if (affectedGO.CompareTag("Enemy") || affectedGO.CompareTag("Barrel"))
+                /* Убедитесь, что не пытаетесь взорвать только что взорванную бочку на том же месте
+                if (affectedGO.transform.position != explosionCenter)
                 {
-                    Destroy(affectedGO);
-                    continue;
+                    // Рекурсивный взрыв для цепной реакции
+                    Vector3 newExplosionCenter = affectedGO.transform.position;
+                    Destroy(affectedGO); // Сначала удаляем объект
+                    ExplodeBarrel(newExplosionCenter);
                 }
-                // Если попадаем в СТЕНУ, просим MapGenerator удалить блок.
-                else if (affectedGO.CompareTag("Wall"))
+                */
+            }
+            
+
+            // ------------------ Логика Урона (для игрока/врагов) ------------------
+            else if (tag == "Enemy" || tag == "Player")
+            {
+                float maxDamage = 50f;
+
+                // Расчет силы: чем ближе, тем сильнее
+                // (t=1 в innerRadius, t=0 в explosionRadius)
+                float t = Mathf.InverseLerp(explosionRadius, innerRadius, dist);
+                float damage = Mathf.Lerp(0, maxDamage, t);
+
+                Rigidbody rb = affectedGO.GetComponent<Rigidbody>();
+                if (rb != null)
                 {
-                    if (mapGenerator != null)
-                    {
-                        // 💥 ИСПРАВЛЕНИЕ: Мы не можем использовать affectedGO.transform.position,
-                        // потому что это позиция родительского чанка (0, 0, 0). 
-                        // Вместо этого используем центр взрыва, чтобы определить блок.
-                        mapGenerator.RemoveBlock(explosionCenter);
-                    }
-                    // После удаления стены она исчезнет при следующем кадре.
-                    continue;
+                    float force = damage * 0.5f; // Конвертируем урон в силу отталкивания
+                    Vector3 direction = (affectedGO.transform.position - explosionCenter).normalized;
+
+                    // Добавляем силу, направленную от центра взрыва
+                    rb.AddForce(direction * force, ForceMode.Impulse);
+                    // Опционально: AddExplosionForce, если вы хотите более "физичный" взрыв
+
+                    // Debug.Log($"Применяем силу к {affectedGO.name}: {force:F4}");
                 }
             }
+        }
 
-            // --- Внешний радиус (для всех, включая игрока): физический толчок ---
-            Rigidbody rb = hit.attachedRigidbody;
+        // =======================================================
+        // III. РАЗРУШЕНИЕ СТЕН (Raycast Explosion)
+        // =======================================================
 
-            // Проверяем, есть ли Rigidbody (нужен для игрока, чтобы его отбросило)
-            if (rb != null)
+        if (mapGenerator != null)
+        {
+            // Лучи начинаются чуть выше пола, чтобы избежать застревания
+            Vector3 rayStart = explosionCenter + Vector3.up * rayHeight;
+
+            for (int i = 0; i < rayCount; i++)
             {
-                // Сила затухает от центра
-                float t = Mathf.Clamp01(1f - (dist / outerRadius));
-                float force = explosionForce * t;
-                rb.AddExplosionForce(force, explosionCenter, outerRadius, upwardsModifier, ForceMode.Impulse);
+                float angle = i * (360f / rayCount);
+
+                // Направление в горизонтальной плоскости (XZ)
+                Vector3 direction = Quaternion.Euler(0, angle, 0) * Vector3.forward;
+
+                RaycastHit rayHit;
+
+                // Выпускаем луч
+                if (Physics.Raycast(rayStart, direction, out rayHit, explosionRadius))
+                {
+                    GameObject affectedGO = rayHit.collider.gameObject;
+
+                    if (affectedGO.CompareTag("Wall"))
+                    {
+                        // Ключевой момент: смещение точки попадания внутрь блока (0.1f)
+                        // для правильной привязки к сетке в MapGenerator.RemoveBlock
+                        Vector3 insidePoint = rayHit.point - rayHit.normal * 0.1f;
+
+                        mapGenerator.RemoveBlock(insidePoint);
+
+                        // Debug.DrawRay(rayStart, direction * rayHit.distance, Color.red, 2f);
+                    }
+                }
             }
         }
     }
-    // ...
 
-    /// <summary>
-    /// Логика обработки попадания (аналог OnCollisionEnter из пули)
-    /// </summary>
+
+    // Логика обработки попадания (аналог OnCollisionEnter из пули)
     void HandleRaycastHit(RaycastHit hit)
     {
         GameObject go = hit.collider.gameObject;
-
-        // --- Попадание в стену или бочку ---
-        if (go.CompareTag("Wall") || go.CompareTag("Barrel"))
+        if (explosionPrefab != null)
+            Instantiate(explosionPrefab, hit.point, Quaternion.identity);
+        
+        if (go.CompareTag("Wall"))
         {
-            // Добавляем маленький эффект попадания для всех разрушаемых объектов
-            if (explosionPrefab != null)
-                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
-
-            if (go.CompareTag("Barrel"))
+            if (mapGenerator != null)
             {
-                // 💥 БОЧКА ВЗРЫВАЕТСЯ!
-                // 1. Вызываем взрыв (чтобы разрушить окружение)
-                ExplodeBarrel(hit.point);
-
-                // 2. Уничтожаем саму бочку (ее префаб-объект)
-                Destroy(go);
-            }
-            else // Стена
-            {
-                if (mapGenerator != null)
-                {
-                    // Стены удаляем через MapGenerator
-                    mapGenerator.RemoveBlock(hit.point);
-                }
+                // Берём точку чуть внутри блока откуда пришёл луч
+                Vector3 insidePoint = hit.point - hit.normal * 0.1f;
+                mapGenerator.RemoveBlock(insidePoint);
             }
         }
+
+        else if (go.CompareTag("Barrel"))
+        {
+            // 💥 БОЧКА ВЗРЫВАЕТСЯ!
+            // 1. Вызываем взрыв (чтобы разрушить окружение)
+            Vector3 explosionCenter = go.transform.position;
+            ExplodeBarrel(explosionCenter);
+
+            // 2. Уничтожаем саму бочку (ее префаб-объект)
+            Destroy(go);
+        }
+
         // --- Попадание во врага ---
         else if (go.CompareTag("Enemy"))
         {
@@ -308,10 +356,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // ... (Код DrawTrail и OnGUI без изменений)
-    /// <summary>
-    /// Создает визуальный след с помощью LineRenderer.
-    /// </summary>
+    // Создает визуальный след с помощью LineRenderer.
     void DrawTrail(Vector3 startPoint, Vector3 endPoint)
     {
         if (trailPrefab == null) return;
@@ -331,7 +376,6 @@ public class PlayerController : MonoBehaviour
         Destroy(trail, trailDuration);
     }
 
-    // ... (Код OnGUI без изменений)
     void OnGUI()
     {
         if (!isMobile) return;

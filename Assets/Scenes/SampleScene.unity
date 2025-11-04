@@ -1604,11 +1604,14 @@ MonoBehaviour:
   explosionPrefabBarrel: {fileID: 191186, guid: 079954accd64b32419ec069129c81273, type: 3}
   innerRadius: 2
   outerRadius: 5
-  explosionForce: 700
+  explosionForce: 40
   upwardsModifier: 0
   explosionMask:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 4294967295
+  explosionRadius: 5
+  rayCount: 8
+  rayHeight: 0.5
   maxShootDistance: 100
   shootableMask:
     serializedVersion: 2
@@ -3129,7 +3132,7 @@ MonoBehaviour:
   maxEnemiesPerChunk: 3
   enemySpawnCheckRadius: 1
   chunkSize: 20
-  blockSize: 3
+  blockSize: 2.5
   renderDistance: 2
   viewDistance: 1
   mapParent: {fileID: 1189740618}

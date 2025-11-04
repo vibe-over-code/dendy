@@ -450,11 +450,7 @@ public class MapGenerator : MonoBehaviour
 
 
 
-    // ====================== ФУНКЦИИ РАЗРУШАЕМОСТИ ======================
-
-    /// <summary>
-    /// Удаляет блок по мировым координатам и перестраивает затронутые чанки.
-    /// </summary>
+    // Удаляет блок по мировым координатам и перестраивает затронутые чанки.
     public void RemoveBlock(Vector3 worldPosition)
     {
         Vector2Int chunkCoord = GetChunkCoord(worldPosition);
@@ -634,4 +630,24 @@ public class MapGenerator : MonoBehaviour
             used.Add(pos);
         }
     }
+
+    // В классе MapGenerator
+    public Vector3 WorldToBlockPosition(Vector3 worldPosition)
+    {
+        // Находим координаты чанка (как в GetChunkCoord)
+        Vector2Int chunkCoord = GetChunkCoord(worldPosition);
+
+        // Вычисляем начало чанка (origin) (как в RemoveBlock)
+        Vector3 chunkOrigin = new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize);
+        Vector3 relativePos = worldPosition - chunkOrigin;
+
+        // Конвертация относительных координат в блочные индексы (как в RemoveBlock)
+        int localX = Mathf.FloorToInt(relativePos.x / blockSize);
+        int localZ = Mathf.FloorToInt(relativePos.z / blockSize);
+
+        // Возвращаем позицию центра блока (или его начала) в мировых координатах
+        // В данном случае, возвращаем начало блока, как его обрабатывает RemoveBlock:
+        return chunkOrigin + new Vector3(localX * blockSize, 0, localZ * blockSize);
+    }
+
 }
