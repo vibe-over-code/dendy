@@ -60,17 +60,14 @@ public class AIEnemyTank : MonoBehaviour
         shootTimer -= Time.deltaTime;
         if (shootTimer <= 0f)
         {
-            // Если видит стену — стреляет в неё
             if (blocked && hit.collider.CompareTag("Wall"))
             {
-                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
+                // Не создаём лишний взрыв визуально!
                 Shoot();
                 shootTimer = shootCooldown;
             }
             else if (distance <= detectionRadius)
             {
-                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
-                // Стреляет по игроку
                 Shoot();
                 shootTimer = shootCooldown;
             }
@@ -110,8 +107,9 @@ public class AIEnemyTank : MonoBehaviour
             {
                 string currentSceneName = SceneManager.GetActiveScene().name;
                 // Перезагружаем текущую сцену
-                SceneManager.LoadScene(currentSceneName);
-                Debug.Log("AI попал в игрока!");
+                //SceneManager.LoadScene(currentSceneName);
+                //Debug.Log("AI попал в игрока!");
+                hit.transform.position = new Vector3(0.0f, 2.6f, 0.0f);
             }
             else if (affectedGO.CompareTag("Wall") && mapGenerator != null)
             {
