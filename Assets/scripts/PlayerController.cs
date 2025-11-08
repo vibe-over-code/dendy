@@ -196,12 +196,12 @@ public class PlayerController : MonoBehaviour
     // Логика взрыва бочки (удаление/отбрасывание объектов)
     public void ExplodeBarrel(Vector3 explosionCenter)
     {
-        // 🔒 Простая защита от двойного вызова по той же позиции
+        // Простая защита от двойного вызова по той же позиции
         if (_lastExplosionCenter.HasValue && Vector3.Distance(_lastExplosionCenter.Value, explosionCenter) < 0.1f)
             return;
         _lastExplosionCenter = explosionCenter;
 
-        Debug.Log($"Взрыв бочки в ({explosionCenter.x:F2}, {explosionCenter.y:F2}, {explosionCenter.z:F2}), радиус: {explosionRadius}");
+        //Debug.Log($"Взрыв бочки в ({explosionCenter.x:F2}, {explosionCenter.y:F2}, {explosionCenter.z:F2}), радиус: {explosionRadius}");
 
         // I. СПАВН ЭФФЕКТА ВЗРЫВА
         if (explosionPrefabBarrel != null)
@@ -265,7 +265,7 @@ public class PlayerController : MonoBehaviour
         }
 
         // Через небольшую задержку можно сбросить защиту
-        StartCoroutine(ResetLastExplosion(0.2f));
+        StartCoroutine(ResetLastExplosion(1f));
     }
 
     private Vector3? _lastExplosionCenter = null;

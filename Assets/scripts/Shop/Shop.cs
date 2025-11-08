@@ -145,15 +145,21 @@ public class ShopManager : MonoBehaviour
 
     public void ResetPlayerPrefs()
     {
-        Debug.LogWarning("Сброс только данных магазина...");
-        PlayerPrefs.DeleteKey("Coins");
-        PlayerPrefs.Save(); // <-- сохраняем изменение
+        Debug.LogWarning("Полный сброс всех сохранённых данных...");
+
+        // Полностью очищаем PlayerPrefs
+        PlayerPrefs.DeleteAll();
+        PlayerPrefs.Save(); // обязательно, чтобы изменения записались на диск
+
+        // Сбрасываем локальные переменные (если нужно)
         coins = 0;
         UpdateCoinsUI();
 
+        // Обновляем UI магазина, если он есть
         foreach (var category in categories)
             category.RefreshUI();
 
-        Debug.Log("Coins обнулены, магазин обновлён!");
+        Debug.Log("Все PlayerPrefs удалены, данные сброшены!");
     }
+
 }
