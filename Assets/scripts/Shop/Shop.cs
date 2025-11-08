@@ -22,7 +22,6 @@ public class ShopManager : MonoBehaviour
     private IShopCategory activeCategory;
     private int coins;
 
-    //Флаг состояния меню с автообработкой
     [SerializeField]
     private bool _isInMenu = true;
     public bool isInMenu
@@ -30,10 +29,9 @@ public class ShopManager : MonoBehaviour
         get => _isInMenu;
         set
         {
-            if (_isInMenu == value) return; // если не изменилось — выходим
+            if (_isInMenu == value) return;
             _isInMenu = value;
 
-            // если меню закрыто — сброс предпросмотра во всех категориях
             if (!_isInMenu)
             {
                 foreach (var cat in categories)
@@ -44,7 +42,13 @@ public class ShopManager : MonoBehaviour
 
     private void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
         Instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
     private void Start()
@@ -100,12 +104,23 @@ public class ShopManager : MonoBehaviour
         }
     }
 
+    // --- Изменения: всегда сохраняем сразу после изменения coins ---
     public void AddCoins(int amount)
     {
         coins += amount;
         PlayerPrefs.SetInt("Coins", coins);
+        PlayerPrefs.Save(); // <-- важное добавление
         UpdateCoinsUI();
     }
+
+    public void SpendCoins(int amount)
+    {
+        coins = Mathf.Max(0, coins - amount);
+        PlayerPrefs.SetInt("Coins", coins);
+        PlayerPrefs.Save(); // <-- важное добавление
+        UpdateCoinsUI();
+    }
+    // ----------------------------------------------------------------
 
     private void UpdateCoinsUI()
     {
@@ -121,27 +136,24 @@ public class ShopManager : MonoBehaviour
             return false;
         }
 
-        coins -= price;
-        PlayerPrefs.SetInt("Coins", coins);
-        UpdateCoinsUI();
+        // теперь используем SpendCoins, где PlayerPrefs.Save() уже вызывается
+        SpendCoins(price);
 
         category.MarkAsBought(index);
         return true;
     }
 
-    //сброс сохранений
     public void ResetPlayerPrefs()
     {
-        Debug.LogWarning("Сброс всех сохранений магазина...");
-        PlayerPrefs.DeleteAll();
-        PlayerPrefs.Save();
+        Debug.LogWarning("Сброс только данных магазина...");
+        PlayerPrefs.DeleteKey("Coins");
+        PlayerPrefs.Save(); // <-- сохраняем изменение
+        coins = 0;
+        UpdateCoinsUI();
 
         foreach (var category in categories)
             category.RefreshUI();
 
-        coins = 0;
-        UpdateCoinsUI();
-
-        Debug.Log("PlayerPrefs очищены и UI обновлён!");
+        Debug.Log("Coins обнулены, магазин обновлён!");
     }
 }

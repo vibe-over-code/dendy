@@ -1,69 +1,109 @@
-﻿// ➡️ Файл: ProjectileTrail.cs
-using UnityEngine;
+﻿using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody))]
 public class ProjectileTrail : MonoBehaviour
 {
-    private Vector3 startPos;
-    private Vector3 endPos;
-    private float speed;
-    private float length;
-    private float startTime;
-    private float distance;
+    [Header("Trail Settings")]
+    public Color trailColor = Color.yellow;
+    public float trailWidth = 0.2f;
+    public float trailLifetime = 0.5f;
 
-    private LineRenderer lr;
+    private ParticleSystem trailPS;
+    private float spawnTime;
+    private Vector3 targetPoint;
+    private bool moving = false;
+    private float speed = 100f; // скорость движения трассера
 
-    public void Initialize(Vector3 start, Vector3 end, float travelSpeed, float trailLength, float width, Color color, Material material, float lifetime)
+    void Start()
     {
-        startPos = start;
-        endPos = end;
-        speed = travelSpeed;
-        length = trailLength;
+        spawnTime = Time.time;
+        CreateTrail();
+    }
 
-        distance = Vector3.Distance(startPos, endPos);
-        startTime = Time.time;
+    void CreateTrail()
+    {
+        trailPS = gameObject.AddComponent<ParticleSystem>();
 
-        // Создаем LineRenderer
-        lr = gameObject.AddComponent<LineRenderer>();
-        lr.sharedMaterial = material;
-        lr.startColor = color;
-        lr.endColor = color;
-        lr.startWidth = width;
-        lr.endWidth = width * 0.5f;
-        lr.positionCount = 2;
+        var main = trailPS.main;
+        main.startColor = trailColor;
+        main.startLifetime = trailLifetime;
+        main.startSize = trailWidth;
+        main.startSpeed = 0f;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 500;
 
-        // Уничтожаем объект после окончания полета/времени жизни
-        Destroy(gameObject, lifetime);
+        var emission = trailPS.emission;
+        emission.rateOverTime = 0;
+
+        var trails = trailPS.trails;
+        trails.enabled = true;
+        trails.mode = ParticleSystemTrailMode.Ribbon;
+        trails.ratio = 1f;
+        trails.lifetime = trailLifetime;
+        trails.dieWithParticles = true;
+
+        var shape = trailPS.shape;
+        shape.enabled = false;
+
+        var renderer = trailPS.GetComponent<ParticleSystemRenderer>();
+        renderer.material = new Material(Shader.Find("Sprites/Default"));
+        renderer.trailMaterial = renderer.material;
+        renderer.renderMode = ParticleSystemRenderMode.Stretch;
+        renderer.sortingOrder = 1;
+
+        trailPS.Play();
     }
 
     void Update()
     {
-        if (lr == null) return;
+        if (trailPS == null) return;
 
-        // 1. Вычисляем текущее положение головы трассера
-        float distanceCovered = (Time.time - startTime) * speed;
-        float fractionOfJourney = distanceCovered / distance;
+        // Эмитим частицу на позиции снаряда
+        trailPS.Emit(1);
 
-        // Текущее положение, где находится "голова" трассера
-        Vector3 currentHead = Vector3.Lerp(startPos, endPos, fractionOfJourney);
-
-        // 2. Вычисляем положение хвоста трассера
-        // Откатываемся назад от головы на фиксированную длину
-        Vector3 direction = (endPos - startPos).normalized;
-        Vector3 currentTail = currentHead - direction * length;
-
-        // 3. Обновляем позиции LineRenderer
-        lr.SetPosition(0, currentTail);
-        lr.SetPosition(1, currentHead);
-
-        // 4. Проверяем завершение полета (попадание в цель)
-        if (fractionOfJourney >= 1.0f)
+        // Движение трассера, если активировано
+        if (moving)
         {
-            // Здесь можно добавить эффект взрыва в точке endPos
-            Destroy(gameObject);
+            transform.position = Vector3.MoveTowards(transform.position, targetPoint, speed * Time.deltaTime);
+            if (Vector3.Distance(transform.position, targetPoint) < 0.1f)
+            {
+                moving = false;
+                Destroy(gameObject, trailLifetime);
+            }
         }
+    }
 
-        // 5. Опционально: постепенное затухание цвета (если нужно)
-        // float alpha = 1.0f - fractionOfJourney;
-        // lr.startColor = new Color(lr.startColor.r, lr.startColor.g, lr.startColor.b, alpha);
+    private void OnDestroy()
+    {
+        if (trailPS != null)
+        {
+            trailPS.transform.parent = null;
+            Destroy(trailPS.gameObject, trailLifetime);
+        }
+    }
+
+    // -----------------------------
+    // Метод для создания трассера
+    // -----------------------------
+    public static void DrawTrail(Vector3 startPoint, Vector3 endPoint,
+                                 float trailWidth = 0.2f,
+                                 Color? trailColor = null,
+                                 float trailLifetime = 0.5f)
+    {
+        Color color = trailColor ?? Color.yellow;
+
+        GameObject trailGO = new GameObject("ProjectileTracer");
+        trailGO.transform.position = startPoint;
+
+        ProjectileTrail trail = trailGO.AddComponent<ProjectileTrail>();
+        trail.trailColor = color;
+        trail.trailWidth = trailWidth;
+        trail.trailLifetime = trailLifetime;
+
+        trail.targetPoint = endPoint;
+        trail.moving = true;
+
+        // Автоудаление
+        Object.Destroy(trailGO, trailLifetime + 1f);
     }
 }

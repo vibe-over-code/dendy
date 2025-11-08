@@ -20,7 +20,11 @@
     "Volumesfx":"SFX Volume",
     "tap":"tap",
     "swipe":"swipe",
-    "space":" "
+    "space":" ",
+    "score":"Score",
+    "bestscore":"Best score",
+    "reset":"Restart",
+    "difficult":"Difficulty"
   },
   "ru": {
     "play": "Играть",
@@ -43,6 +47,10 @@
     "Volumesfx":"Громкость эффектов",
     "tap":"Нажми",
     "swipe":"свайп",
-    "space":" "
+    "space":" ",
+    "score":"счет",
+    "bestscore":"Лучший счет",
+    "reset":"Играть еще",
+    "difficult":"Сложность"
   }
 }

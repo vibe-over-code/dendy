@@ -1,37 +1,34 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
-using UnityEngine.Audio; // ⬅️ ОЧЕНЬ ВАЖНО: Добавлено для работы с микшером
+using UnityEngine.Audio;
 
-/// <summary>
-/// Контроллер меню громкости и паузы.
-/// Управляет двумя слайдерами, которые регулируют SFX и Музыку через AudioMixer.
-/// </summary>
 public class VolumeMenuController : MonoBehaviour
 {
     [Header("UI Elements")]
-    public GameObject volumeMenu;   // Панель меню (Canvas или Panel)
-    public Button toggleButton;     // Кнопка для открытия меню
-    
-    // Новые разделенные слайдеры
-    public Slider musicSlider;      // Слайдер громкости музыки
-    public Slider sfxSlider;        // Слайдер громкости звуковых эффектов (SFX)
-    
+    public GameObject volumeMenu;
+    public Button toggleButton;
+
+    public Slider musicSlider;
+    public Slider sfxSlider;
+
     [Header("Audio")]
-    public AudioMixer mainMixer;    // Ссылка на MainMixer (из Project)
-    
-    // Имена открытых параметров в микшере (должны совпадать!)
+    public AudioMixer mainMixer;
+
     private const string SFX_VOLUME_PARAM = "SFXVolume";
     private const string MUSIC_VOLUME_PARAM = "MusicVolume";
-    
+
+    private const string PREF_SFX = "SFXVolumePref";
+    private const string PREF_MUSIC = "MusicVolumePref";
+
     [Header("Gameplay References")]
-    public GameObject player;       // Игрок, чтобы можно было отключить его управление
+    public GameObject player;
 
     private bool isMenuOpen = false;
 
     private void Start()
     {
-        // Гарантируем наличие EventSystem (для UI)
+        // Проверяем наличие EventSystem
         if (EventSystem.current == null)
         {
             var es = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
@@ -44,46 +41,35 @@ public class VolumeMenuController : MonoBehaviour
         if (toggleButton != null)
             toggleButton.onClick.AddListener(ToggleMenu);
 
-        // --- Инициализация Music Slider ---
-        if (musicSlider != null && mainMixer != null)
+        // Инициализация слайдеров с подгрузкой сохранённых значений
+        if (mainMixer != null)
         {
-            InitializeSlider(musicSlider, MUSIC_VOLUME_PARAM, OnMusicSliderChanged);
-        }
-
-        // --- Инициализация SFX Slider ---
-        if (sfxSlider != null && mainMixer != null)
-        {
-            InitializeSlider(sfxSlider, SFX_VOLUME_PARAM, OnSfxSliderChanged);
+            InitializeSlider(musicSlider, MUSIC_VOLUME_PARAM, PREF_MUSIC, OnMusicSliderChanged);
+            InitializeSlider(sfxSlider, SFX_VOLUME_PARAM, PREF_SFX, OnSfxSliderChanged);
         }
     }
 
     /// <summary>
-    /// Инициализирует слайдер, устанавливая его значение из микшера и подписывая на событие.
+    /// Инициализация слайдера с подгрузкой сохранённого значения
     /// </summary>
-    private void InitializeSlider(Slider slider, string paramName, UnityEngine.Events.UnityAction<float> listener)
+    private void InitializeSlider(Slider slider, string paramName, string prefKey, UnityEngine.Events.UnityAction<float> listener)
     {
-        // 1. Установка начального значения из микшера
-        float currentVolume_db;
-        if (mainMixer.GetFloat(paramName, out currentVolume_db))
-        {
-            // Преобразование дБ обратно в линейное значение (0 до 1) для слайдера
-            slider.value = Mathf.Pow(10, currentVolume_db / 20f);
-        }
-        else
-        {
-            // Если не удалось загрузить, устанавливаем по умолчанию
-            slider.value = 0.75f;
-        }
+        if (slider == null) return;
 
-        // 2. Отключение навигации (чтобы избежать конфликтов с управлением танком)
+        // Загружаем сохранённое значение или ставим по умолчанию
+        float savedValue = PlayerPrefs.GetFloat(prefKey, 0.75f);
+        slider.value = savedValue;
+        listener.Invoke(savedValue); // Применяем сразу к AudioMixer
+
+        // Отключаем навигацию
         var nav = slider.navigation;
         nav.mode = Navigation.Mode.None;
         slider.navigation = nav;
 
-        // 3. Подписка на событие
+        // Подписка
         slider.onValueChanged.AddListener(listener);
     }
-    
+
     private void ToggleMenu()
     {
         if (volumeMenu == null) return;
@@ -91,12 +77,10 @@ public class VolumeMenuController : MonoBehaviour
         isMenuOpen = !isMenuOpen;
         volumeMenu.SetActive(isMenuOpen);
 
-        // Управление паузой и временем
         if (isMenuOpen)
         {
-            Time.timeScale = 0f; // Ставим игру на паузу
-            
-            // Блокируем управление игроком
+            Time.timeScale = 0f;
+
             if (player != null)
             {
                 var controller = player.GetComponent<PlayerController>();
@@ -106,9 +90,8 @@ public class VolumeMenuController : MonoBehaviour
         }
         else
         {
-            Time.timeScale = 1f; // Возвращаем время
-            
-            // Возвращаем управление игроку
+            Time.timeScale = 1f;
+
             if (player != null)
             {
                 var controller = player.GetComponent<PlayerController>();
@@ -116,39 +99,61 @@ public class VolumeMenuController : MonoBehaviour
                     controller.enabled = true;
             }
         }
-        
-        // Сброс фокуса UI, чтобы избежать случайного ввода после закрытия меню
+
         EventSystem.current.SetSelectedGameObject(null);
     }
-    
-    // --- Методы обработки слайдеров ---
-    
+
+    // --- Методы для слайдеров ---
     private void OnSfxSliderChanged(float value)
     {
         SetVolume(value, SFX_VOLUME_PARAM);
+        PlayerPrefs.SetFloat(PREF_SFX, value);
+        PlayerPrefs.Save();
     }
-    
+
     private void OnMusicSliderChanged(float value)
     {
         SetVolume(value, MUSIC_VOLUME_PARAM);
+        PlayerPrefs.SetFloat(PREF_MUSIC, value);
+        PlayerPrefs.Save();
     }
-    
+
     /// <summary>
-    /// Устанавливает громкость в Audio Mixer, преобразуя линейное значение (0-1) в логарифмическое (дБ).
+    /// Применяет громкость в микшере
     /// </summary>
     private void SetVolume(float value, string paramName)
     {
         if (mainMixer == null) return;
-        
+
         if (value > 0)
+            mainMixer.SetFloat(paramName, Mathf.Log10(value) * 20f);
+        else
+            mainMixer.SetFloat(paramName, -80f);
+    }
+
+    /// <summary>
+    /// Включает или выключает всю музыку и SFX.
+    /// Используется при показе рекламы.
+    /// </summary>
+    public void MuteAll(bool mute)
+    {
+        if (mainMixer == null) return;
+
+        if (mute)
         {
-            // Логарифмическое преобразование: 1.0 -> 0 дБ, 0.1 -> -20 дБ и т.д.
-            mainMixer.SetFloat(paramName, Mathf.Log10(value) * 20);
+            mainMixer.SetFloat(MUSIC_VOLUME_PARAM, -80f);
+            mainMixer.SetFloat(SFX_VOLUME_PARAM, -80f);
         }
         else
         {
-            // При значении 0 выставляем тишину
-            mainMixer.SetFloat(paramName, -80f); 
+            // Восстанавливаем по сохранённым значениям
+            float musicVal = PlayerPrefs.GetFloat(PREF_MUSIC, 0.75f);
+            float sfxVal = PlayerPrefs.GetFloat(PREF_SFX, 0.75f);
+            SetVolume(musicVal, MUSIC_VOLUME_PARAM);
+            SetVolume(sfxVal, SFX_VOLUME_PARAM);
+
+            if (musicSlider != null) musicSlider.value = musicVal;
+            if (sfxSlider != null) sfxSlider.value = sfxVal;
         }
     }
 }

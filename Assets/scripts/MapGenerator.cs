@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System;
-
-// Используем System.Random для детерминированной генерации (по сиду чанка)
-using Random = System.Random;
+using Random = System.Random; // Используем System.Random для детерминированной генерации (по сиду чанка)
+using TMPro;
+using UnityEngine.UI;
+using System.Collections;
 
 // Новые структуры для блочных данных
 public enum BlockType { Air, Wall, Barrel }
@@ -31,29 +32,47 @@ public class MapChunkData
 /// </summary>
 public class MapGenerator : MonoBehaviour
 {
+    // --- ССЫЛКИ ---
     public Transform player;
     private PlayerController playerControllerInstance;
+    public Resultui Resultui;
 
     [Header("Простые объекты карты")]
     public Material wallMaterial;
     public GameObject barrelPrefab;
 
+    // --- НАСТРОЙКИ ВРАГОВ (КОНТРОЛЬ) ---
     [Header("Враги")]
     public GameObject enemyPrefab;
-    public int minEnemiesPerChunk = 1;
-    public int maxEnemiesPerChunk = 3;
-    // Радиус проверки свободного места для спавна (чтобы враги не застряли сразу)
+    public Slider enemyDifficultySlider;
+
+    public float enemyDifficultyMultiplier = 1.0f; // 0.0 - нет врагов, 1.0 - стандарт
+
+    // Базовые параметры (при Difficulty=1.0)
+    [Header("Базовые Настройки Спавна (при Difficulty=1.0)")]
+    private float baseEnemySpawnChance = 1f; // Базовый шанс, что в чанке будут враги
+    public int baseMinEnemiesIfSpawned = 1; // Мин. врагов, если спавн произошел
+    public int baseMaxEnemiesIfSpawned = 3; // Макс. врагов, если спавн произошел
+
+    // Дистанции спавна
+    public float minEnemySpawnDistance = 60f; // чуть дальше зоны видимости
+    public float maxEnemySpawnDistance = 120f; // максимум — дальше этого не нужно
+
+    // Проверка коллизий
     public float enemySpawnCheckRadius = 1.5f;
 
+
+    // --- НАСТРОЙКИ ГЕНЕРАЦИИ ---
     [Header("Настройки Генерации")]
     public int chunkSize = 16;
     public float blockSize = 3f;
     public int renderDistance = 3;
     public int viewDistance = 1;
+
     [Header("Настройки Глобального Сида")]
     public bool useRandomSeed = true;
     public int fixedSeed = 12345;
-    private int globalSeed; // Используется для смешивания всех чанков
+    private int globalSeed;
 
     public Transform mapParent;
 
@@ -61,27 +80,36 @@ public class MapGenerator : MonoBehaviour
     public GameObject singleFloorPrefab;
     private Transform centralFloor;
 
-    [Header("Инверсия нормалей")]
+    [Header("Инверсия нормалей (Для меша)")]
     public bool invertForward = false;
     public bool invertBack = false;
     public bool invertRight = false;
     public bool invertLeft = false;
     public bool invertUp = false;
 
-
+    // --- СОСТОЯНИЕ КАРТЫ ---
     private Dictionary<Vector2Int, GameObject> loadedChunks = new();
-    // Контейнер для хранения всех данных чанков (даже если они не отрисовываются)
     private Dictionary<Vector2Int, MapChunkData> chunkDataContainer = new();
     private Vector2Int currentChunk;
+    public Vector3 defaultpos;
 
     // UV-смещение (если используется атлас текстур)
     private readonly Vector2 WALL_UV_OFFSET = new Vector2(0, 0);
 
+    // ====================== UNITY LIFECYCLE ======================
+
     void Start()
     {
+        enemyDifficultyMultiplier = PlayerPrefs.GetFloat("EnemyDifficulty", enemyDifficultyMultiplier);
+
+        if (enemyDifficultySlider != null)
+        {
+            enemyDifficultySlider.value = enemyDifficultyMultiplier;
+            enemyDifficultySlider.onValueChanged.AddListener(OnDifficultySliderChanged);
+        }
+
         if (useRandomSeed)
         {
-            // Используем время для генерации по-настоящему случайного сида при каждом запуске
             globalSeed = System.DateTime.Now.GetHashCode();
         }
         else
@@ -94,10 +122,12 @@ public class MapGenerator : MonoBehaviour
         {
             playerControllerInstance = player.GetComponent<PlayerController>();
         }
-
-        // Определяем, в каком чанке находится игрок при старте
+        
         currentChunk = GetChunkCoord(player != null ? player.position : Vector3.zero);
+        MovePlayerToFreeCellNearCenter();
+        defaultpos = player.transform.position;
         UpdateChunks();
+        
     }
 
     void Update()
@@ -108,7 +138,6 @@ public class MapGenerator : MonoBehaviour
         UpdateCentralFloorPosition(player.position);
 
         Vector2Int newChunk = GetChunkCoord(player.position);
-        // Обновляем чанки при смене чанка или нажатии 'G' (для отладки)
         if (newChunk != currentChunk || Input.GetKeyDown(KeyCode.G))
         {
             currentChunk = newChunk;
@@ -120,18 +149,13 @@ public class MapGenerator : MonoBehaviour
     {
         if (player == null)
         {
-            // Поиск игрока по CharacterController или тегу "Player"
-            var playerObj = FindObjectOfType<UnityEngine.CharacterController>();
-            if (playerObj != null)
-                player = playerObj.transform;
-            if (player == null)
-            {
-                GameObject taggedPlayer = GameObject.FindWithTag("Player");
-                if (taggedPlayer != null)
-                    player = taggedPlayer.transform;
-            }
+            GameObject taggedPlayer = GameObject.FindWithTag("Player");
+            if (taggedPlayer != null)
+                player = taggedPlayer.transform;
         }
     }
+
+    // ====================== УПРАВЛЕНИЕ ПОЛОМ ======================
 
     void SetupCentralFloor()
     {
@@ -143,7 +167,6 @@ public class MapGenerator : MonoBehaviour
 
             int floorSizeInBlocks = (2 * renderDistance + 2) * chunkSize;
             float scaleFactor = floorSizeInBlocks * blockSize;
-            // Установка правильного размера пола, чтобы покрыть всю область рендеринга
             centralFloor.localScale = new Vector3(scaleFactor, 1f, scaleFactor);
         }
     }
@@ -152,20 +175,19 @@ public class MapGenerator : MonoBehaviour
     {
         if (centralFloor == null) return;
 
-        float halfChunkSizeWorld = chunkSize * blockSize;
+        float halfRenderWorld = (renderDistance + 0.5f) * chunkSize * blockSize;
 
-        // Вычисляем позицию, выровненную по сетке чанков
+        // Выравниваем позицию пола по сетке чанков
         Vector3 newPos = new Vector3(
-            (float)Math.Floor(playerPosition.x / halfChunkSizeWorld) * halfChunkSizeWorld + halfChunkSizeWorld / 2f,
+            Mathf.Round(playerPosition.x / (chunkSize * blockSize)) * chunkSize * blockSize,
             -0.1f, // Слегка ниже стен
-            (float)Math.Floor(playerPosition.z / halfChunkSizeWorld) * halfChunkSizeWorld + halfChunkSizeWorld / 2f
+            Mathf.Round(playerPosition.z / (chunkSize * blockSize)) * chunkSize * blockSize
         );
         centralFloor.position = newPos;
     }
 
-    /// <summary>
-    /// Динамически загружает/выгружает чанки вокруг игрока.
-    /// </summary>
+    // ====================== УПРАВЛЕНИЕ ЧАНКАМИ ======================
+
     void UpdateChunks()
     {
         HashSet<Vector2Int> needed = new();
@@ -177,13 +199,14 @@ public class MapGenerator : MonoBehaviour
                 Vector2Int coord = currentChunk + new Vector2Int(dx, dz);
                 needed.Add(coord);
 
+                // Если чанк не загружен, генерируем
                 if (!loadedChunks.ContainsKey(coord))
                 {
                     GameObject chunk = GenerateChunk(coord);
                     loadedChunks.Add(coord, chunk);
                 }
 
-                // Включаем/выключаем рендер (Chunk LOD)
+                // Включаем/выключаем рендер
                 bool visible = (Mathf.Abs(dx) <= viewDistance) && (Mathf.Abs(dz) <= viewDistance);
                 SetChunkRender(loadedChunks[coord], visible);
             }
@@ -195,9 +218,18 @@ public class MapGenerator : MonoBehaviour
         {
             if (!needed.Contains(kvp.Key))
             {
+                // Сначала удаляем все спавненные объекты, если они не были удалены ранее
+                if (chunkDataContainer.TryGetValue(kvp.Key, out MapChunkData chunkData))
+                {
+                    foreach (var obj in chunkData.spawnedObjects)
+                    {
+                        if (obj != null) Destroy(obj);
+                    }
+                }
+
                 Destroy(kvp.Value);
                 toRemove.Add(kvp.Key);
-                chunkDataContainer.Remove(kvp.Key); // Удаляем данные чанка
+                chunkDataContainer.Remove(kvp.Key);
             }
         }
         foreach (var key in toRemove)
@@ -221,7 +253,7 @@ public class MapGenerator : MonoBehaviour
         chunkGO.transform.position = chunkOrigin;
 
         int seed = globalSeed + chunkCoord.x * 1000 + chunkCoord.y;
-        System.Random chunkRnd = new System.Random(seed);
+        Random chunkRnd = new Random(seed);
 
         MapChunkData chunkData = new MapChunkData(chunkSize);
 
@@ -236,64 +268,54 @@ public class MapGenerator : MonoBehaviour
                 {
                     chunkData.data[x, z] = BlockType.Wall;
                 }
-                // Убедитесь, что Air (Воздух) является типом, где может быть бочка
                 else if (chunkRnd.NextDouble() < 0.03 && barrelPrefab != null)
                 {
                     chunkData.data[x, z] = BlockType.Barrel;
                     Quaternion rot = Quaternion.Euler(0, chunkRnd.Next(0, 4) * 90f, 0);
-                    GameObject barrel = Instantiate(barrelPrefab, chunkOrigin + pos, rot, chunkGO.transform);
+                    // Спавним бочки в центре блока
+                    Vector3 worldPos = chunkOrigin + pos + new Vector3(blockSize / 2f, 0, blockSize / 2f);
+                    GameObject barrel = Instantiate(barrelPrefab, worldPos, rot, chunkGO.transform);
                     barrel.tag = "Barrel";
                     chunkData.spawnedObjects.Add(barrel);
                 }
                 else
                 {
-                    // Используем BlockType.Floor (Пол) или BlockType.Air (Воздух) для пустого места
-                    // Я предполагаю, что вы исправили enum и используете Floor
                     chunkData.data[x, z] = BlockType.Air;
                 }
             }
         }
 
-        // ==========================================================
-        // ➡️ ГАРАНТИРУЕМ СВОБОДНОЕ МЕСТО ДЛЯ СТАРТА ИГРОКА (НОВОЕ!)
-        // ==========================================================
+        // ГАРАНТИРУЕМ СВОБОДНОЕ МЕСТО ДЛЯ СТАРТА ИГРОКА (ЧАНК 0,0)
         if (chunkCoord.x == 0 && chunkCoord.y == 0)
         {
             int centerX = chunkSize / 2;
             int centerZ = chunkSize / 2;
 
-            // 1. Удаляем все стены/бочки в 3x3 зоне в центре
-            for (int x = centerX - 1; x <= centerX + 1; x++)
+            // Очистка 5x5 зоны в центре от стен и бочек
+            for (int x = centerX - 2; x <= centerX + 2; x++)
             {
-                for (int z = centerZ - 1; z <= centerZ + 1; z++)
+                for (int z = centerZ - 2; z <= centerZ + 2; z++)
                 {
                     if (x >= 0 && x < chunkSize && z >= 0 && z < chunkSize)
                     {
-                        // Очищаем от стен
                         chunkData.data[x, z] = BlockType.Air;
                     }
                 }
             }
 
-            // 2. Удаляем физически спавненные бочки в этой 3x3 зоне.
-            // Это нужно, если они были созданы в цикле выше.
-            // Используем другую, более крупную зону (5x5) для удаления объектов
-            // на случай, если центр 3x3 был слишком мал.
+            // Удаляем физически спавненные бочки в этой зоне.
             for (int i = chunkData.spawnedObjects.Count - 1; i >= 0; i--)
             {
                 GameObject obj = chunkData.spawnedObjects[i];
-
-                // Получаем координаты блока, где находится объект
                 Vector3 localPos = obj.transform.localPosition;
-                int blockX = Mathf.RoundToInt(localPos.x / blockSize);
-                int blockZ = Mathf.RoundToInt(localPos.z / blockSize);
+                int blockX = Mathf.FloorToInt(localPos.x / blockSize);
+                int blockZ = Mathf.FloorToInt(localPos.z / blockSize);
 
-                // Если объект находится в 5x5 зоне вокруг центра
                 if (blockX >= centerX - 2 && blockX <= centerX + 2 &&
                     blockZ >= centerZ - 2 && blockZ <= centerZ + 2)
                 {
-                    DestroyImmediate(obj); // Удаляем бочку из сцены немедленно
-                    chunkData.spawnedObjects.RemoveAt(i); // Удаляем из списка
+                    DestroyImmediate(obj);
+                    chunkData.spawnedObjects.RemoveAt(i);
                 }
             }
         }
@@ -301,8 +323,6 @@ public class MapGenerator : MonoBehaviour
         chunkDataContainer.Add(chunkCoord, chunkData);
 
         // 2. Построение Mesh (стен)
-        // Mesh mesh = BuildMesh(chunkCoord, chunkData.data); // Ваш BuildMesh должен принимать MapChunkData.data
-        // Исправлено:
         Mesh mesh = BuildMesh(chunkCoord, chunkData.data);
 
         GameObject combinedStaticGO = new GameObject("CombinedBlocks");
@@ -314,17 +334,23 @@ public class MapGenerator : MonoBehaviour
         combinedStaticGO.AddComponent<MeshCollider>().sharedMesh = mesh;
         combinedStaticGO.tag = "Wall";
 
-        // 3. Спавн врагов (врагов нужно запретить спавнить в SpawnEnemies!)
-        SpawnEnemies(chunkGO.transform, chunkOrigin, chunkData.data, chunkData.spawnedObjects);
+        StartCoroutine(SpawnEnemiesDelayed(chunkGO.transform, chunkOrigin, chunkCoord, chunkData.data, chunkData.spawnedObjects));
 
         return chunkGO;
     }
+    IEnumerator SpawnEnemiesDelayed(Transform chunkParent, Vector3 chunkOrigin, Vector2Int chunkCoord, BlockType[,] data, List<GameObject> spawnedObjects)
+    {
+        // ждём немного, чтобы игрок мог отъехать
+        yield return new WaitForSeconds(2f);
 
-    // ====================== ФУНКЦИИ BLOCK/MESH ======================
+        SpawnEnemies(chunkParent, chunkOrigin, chunkCoord, data, spawnedObjects);
+    }
 
-    /// <summary>
-    /// Строит комбинированный меш для всех стен чанка, используя Face Culling.
-    /// </summary>
+
+    // ====================== ФУНКЦИИ MESH (СТЕНЫ) ======================
+    // ... (Методы BuildMesh, IsWallAt, GetBlockType, AddFace остаются без изменений)
+    // Вставлены ниже, чтобы не отвлекать от основной логики.
+
     Mesh BuildMesh(Vector2Int chunkCoord, BlockType[,] data)
     {
         List<Vector3> vertices = new();
@@ -337,10 +363,7 @@ public class MapGenerator : MonoBehaviour
             {
                 if (data[x, z] == BlockType.Wall)
                 {
-                    // Верхняя грань всегда есть
                     AddFace(x, z, Vector3.up, vertices, triangles, uvs);
-
-                    // Добавляем грань только если рядом НЕТ стены
                     if (!IsWallAt(chunkCoord, x, z + 1)) AddFace(x, z, Vector3.forward, vertices, triangles, uvs);
                     if (!IsWallAt(chunkCoord, x, z - 1)) AddFace(x, z, Vector3.back, vertices, triangles, uvs);
                     if (!IsWallAt(chunkCoord, x + 1, z)) AddFace(x, z, Vector3.right, vertices, triangles, uvs);
@@ -358,13 +381,8 @@ public class MapGenerator : MonoBehaviour
         return mesh;
     }
 
-    /// <summary>
-    /// Проверяет, есть ли именно блок СТЕНЫ.
-    /// Всё остальное (включая бочки, пол, воздух) не считается препятствием.
-    /// </summary>
     bool IsWallAt(Vector2Int chunkCoord, int x, int z)
     {
-        // 1️⃣ Проверяем внутри текущего чанка
         if (x >= 0 && x < chunkSize && z >= 0 && z < chunkSize)
         {
             if (chunkDataContainer.TryGetValue(chunkCoord, out MapChunkData chunkData))
@@ -374,7 +392,6 @@ public class MapGenerator : MonoBehaviour
             return false;
         }
 
-        // 2️⃣ Проверяем соседний чанк, если координаты вышли за границы
         Vector2Int neighborCoord = chunkCoord;
         int localX = x;
         int localZ = z;
@@ -392,17 +409,11 @@ public class MapGenerator : MonoBehaviour
                 return neighborChunk.data[localX, localZ] == BlockType.Wall;
             }
         }
-
-        // 3️⃣ Если соседний чанк не загружен — считаем, что стены там нет
         return false;
     }
 
-    /// <summary>
-    /// Получает тип блока в указанных локальных координатах, обрабатывая границы чанков.
-    /// </summary>
     BlockType GetBlockType(Vector2Int currentChunkCoord, int x, int z)
     {
-        // 1. Проверка внутри текущего чанка
         if (x >= 0 && x < chunkSize && z >= 0 && z < chunkSize)
         {
             if (chunkDataContainer.TryGetValue(currentChunkCoord, out MapChunkData currentChunkData))
@@ -412,7 +423,6 @@ public class MapGenerator : MonoBehaviour
             return BlockType.Air;
         }
 
-        // 2. Проверка соседнего чанка
         Vector2Int neighborCoord = currentChunkCoord;
         int localX = x;
         int localZ = z;
@@ -430,20 +440,14 @@ public class MapGenerator : MonoBehaviour
                 return neighborChunkData.data[localX, localZ];
             }
         }
-
-        // 3. Если соседний чанк не загружен — считаем стеной, чтобы не было дыр
         return BlockType.Wall;
     }
 
-    /// <summary>
-    /// Добавляет 4 вершины и 2 треугольника для создания одной грани куба.
-    /// </summary>
     void AddFace(int x, int z, Vector3 direction, List<Vector3> vertices, List<int> triangles, List<Vector2> uvs)
     {
         int triIndex = vertices.Count;
         float s = blockSize;
 
-        // Вершины для каждой стороны
         if (direction == Vector3.forward)
         {
             vertices.Add(new Vector3(x * s, 0, (z + 1) * s));
@@ -481,7 +485,6 @@ public class MapGenerator : MonoBehaviour
         }
         else return;
 
-        // Определяем, нужно ли инвертировать
         bool invert =
             (direction == Vector3.forward && invertForward) ||
             (direction == Vector3.back && invertBack) ||
@@ -489,7 +492,6 @@ public class MapGenerator : MonoBehaviour
             (direction == Vector3.left && invertLeft) ||
             (direction == Vector3.up && invertUp);
 
-        // Добавляем треугольники
         if (!invert)
         {
             triangles.Add(triIndex + 0);
@@ -509,7 +511,6 @@ public class MapGenerator : MonoBehaviour
             triangles.Add(triIndex + 0);
         }
 
-        // UV
         uvs.Add(WALL_UV_OFFSET + new Vector2(0, 0));
         uvs.Add(WALL_UV_OFFSET + new Vector2(1, 0));
         uvs.Add(WALL_UV_OFFSET + new Vector2(1, 1));
@@ -517,36 +518,27 @@ public class MapGenerator : MonoBehaviour
     }
 
 
+    // ====================== ФУНКЦИИ РАЗРУШЕНИЯ ======================
 
-    // Удаляет блок по мировым координатам и перестраивает затронутые чанки.
     public void RemoveBlock(Vector3 worldPosition)
     {
         Vector2Int chunkCoord = GetChunkCoord(worldPosition);
 
         if (chunkDataContainer.TryGetValue(chunkCoord, out MapChunkData chunkData))
         {
-            // 1. Вычисляем начало чанка (origin)
-            // ИСПОЛЬЗУЕМ: new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize)
-            // ВМЕСТО: loadedChunks[chunkCoord].transform.position, так как transform может быть не инициализирован или неточен.
             Vector3 chunkOrigin = new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize);
             Vector3 relativePos = worldPosition - chunkOrigin;
 
-            // 2. Конвертация относительных координат в блочные индексы
+            // Конвертация относительных координат в блочные индексы
             int localX = Mathf.FloorToInt(relativePos.x / blockSize);
             int localZ = Mathf.FloorToInt(relativePos.z / blockSize);
 
             if (localX >= 0 && localX < chunkSize && localZ >= 0 && localZ < chunkSize)
             {
-                BlockType currentType = chunkData.data[localX, localZ];
+                if (chunkData.data[localX, localZ] != BlockType.Wall) return;
 
-                // 💥 ВАЖНОЕ ИЗМЕНЕНИЕ: УДАЛЯЕМ ТОЛЬКО СТЕНЫ.
-                // Бочки теперь удаляются напрямую в PlayerController.
-                if (currentType != BlockType.Wall) return;
-
-                // Удаляем блок
                 chunkData.data[localX, localZ] = BlockType.Air;
 
-                // Перестраиваем текущий и соседние чанки
                 RebuildChunk(chunkCoord);
                 RebuildNeighbors(chunkCoord, localX, localZ);
             }
@@ -558,26 +550,21 @@ public class MapGenerator : MonoBehaviour
         if (loadedChunks.TryGetValue(coord, out GameObject chunkGO) &&
             chunkDataContainer.TryGetValue(coord, out MapChunkData chunkData))
         {
-            // ❗ ИЩЕМ КОМПОНЕНТЫ В ДОЧЕРНЕМ ОБЪЕКТЕ "CombinedBlocks"
             Transform combinedStaticGO = chunkGO.transform.Find("CombinedBlocks");
-            
-            if (combinedStaticGO == null) return; // Если не нашли, то и нечего перестраивать.
+
+            if (combinedStaticGO == null) return;
 
             MeshFilter mf = combinedStaticGO.GetComponent<MeshFilter>();
             MeshCollider mc = combinedStaticGO.GetComponent<MeshCollider>();
 
             if (mf != null && mc != null)
             {
-                // Убеждаемся, что GetBlockType работает с актуальными данными
                 Mesh newMesh = BuildMesh(coord, chunkData.data);
 
-                // Очистка старого меша для предотвращения утечек памяти
                 if (mf.mesh != null) Destroy(mf.mesh);
 
                 mf.mesh = newMesh;
-                // В Unity для MeshCollider нужно сначала присвоить null, 
-                // а потом новый меш, чтобы он гарантированно обновился.
-                mc.sharedMesh = null; 
+                mc.sharedMesh = null;
                 mc.sharedMesh = newMesh;
             }
         }
@@ -585,8 +572,6 @@ public class MapGenerator : MonoBehaviour
 
     void RebuildNeighbors(Vector2Int centerCoord, int localX, int localZ)
     {
-        // Перестраиваем соседей, только если удаленный блок был на границе,
-        // чтобы открыть грань в соседнем чанке.
         if (localX == 0) RebuildChunk(centerCoord + Vector2Int.left);
         if (localX == chunkSize - 1) RebuildChunk(centerCoord + Vector2Int.right);
         if (localZ == 0) RebuildChunk(centerCoord + Vector2Int.down);
@@ -595,71 +580,72 @@ public class MapGenerator : MonoBehaviour
 
     // ====================== ФУНКЦИИ СПАВНА ======================
 
-    void SpawnEnemies(Transform chunkParent, Vector3 chunkOrigin, BlockType[,] data, List<GameObject> spawnedObjects)
+    void SpawnEnemies(Transform chunkParent, Vector3 chunkOrigin, Vector2Int chunkCoord, BlockType[,] data, List<GameObject> spawnedObjects)
     {
-        // 1. Предварительная проверка PlayerController
-        if (player != null && playerControllerInstance == null)
-        {
-            // Ищем контроллер игрока один раз, если он еще не найден
-            playerControllerInstance = player.GetComponent<PlayerController>();
-        }
-
-        // 2. Получаем ссылку на наш MapGenerator (только один раз за вызов)
-        // MapGenerator всегда должен быть на этом объекте, но GetComponent — это безопасно.
-        MapGenerator selfMapGenerator = this.GetComponent<MapGenerator>();
-        if (selfMapGenerator == null)
-        {
-            Debug.LogError("MapGenerator не найден на этом объекте. Невозможно инициализировать AI!");
+        if (enemyPrefab == null || player == null || enemyDifficultyMultiplier <= 0)
             return;
-        }
 
-        // Используем детерминированный сид для врагов
-        int seed = globalSeed + chunkParent.position.GetHashCode();
-        System.Random enemyRnd = new System.Random(seed);
+        // --- Исправленный расчёт центра чанка ---
+        Vector3 chunkCenter = chunkOrigin + new Vector3(chunkSize * blockSize / 2f, 0, chunkSize * blockSize / 2f);
+        float distToPlayer = Vector3.Distance(player.position, chunkCenter);
 
-        int enemiesToSpawn = enemyRnd.Next(minEnemiesPerChunk, maxEnemiesPerChunk + 1);
-        HashSet<Vector3> usedPositions = new HashSet<Vector3>();
+        // --- Мягкая логика спавна ---
+        // Чтобы враги появлялись не только "далеко", а и постепенно вокруг
+        if (distToPlayer > maxEnemySpawnDistance)
+            return;
+
+        // Уменьшил минимальную дистанцию, чтобы враги появлялись ближе
+        if (distToPlayer < minEnemySpawnDistance * 0.5f)
+            return;
+
+        // --- Детерминированный сид ---
+        int seed = globalSeed + chunkCoord.x * 1000 + chunkCoord.y;
+        Random rnd = new Random(seed);
+
+        float adjustedChance = Mathf.Clamp01(baseEnemySpawnChance * enemyDifficultyMultiplier);
+        if (rnd.NextDouble() > adjustedChance)
+            return;
+
+        int minToSpawn = Mathf.RoundToInt(baseMinEnemiesIfSpawned * enemyDifficultyMultiplier);
+        int maxToSpawn = Mathf.RoundToInt(baseMaxEnemiesIfSpawned * enemyDifficultyMultiplier);
+        minToSpawn = Mathf.Max(1, minToSpawn);
+        maxToSpawn = Mathf.Max(minToSpawn, maxToSpawn);
+
+        int enemiesToSpawn = rnd.Next(minToSpawn, maxToSpawn + 1);
+
+        HashSet<Vector3> usedPositions = new();
 
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            if (enemyPrefab != null)
+            Vector3 pos = GetRandomSpawnPos(chunkOrigin, data, usedPositions, rnd);
+            if (float.IsNegativeInfinity(pos.x)) continue;
+
+            GameObject enemy = Instantiate(enemyPrefab, pos + Vector3.up * 0.5f, Quaternion.identity, chunkParent);
+            spawnedObjects.Add(enemy);
+            usedPositions.Add(pos);
+
+            var ai = enemy.GetComponent<AIEnemyTank>();
+            if (ai != null)
             {
-                // Получаем случайную позицию для спавна
-                Vector3 pos = GetRandomSpawnPos(chunkOrigin, data, usedPositions, enemyRnd);
-
-                // Если позиция найдена (GetRandomSpawnPos возвращает float.NegativeInfinity в случае неудачи)
-                if (!float.IsNegativeInfinity(pos.x))
-                {
-                    GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, chunkParent);
-                    // Важно: поднимаем врага, чтобы он не провалился в пол
-                    enemy.transform.position += Vector3.up * 0.5f;
-
-                    var ai = enemy.GetComponent<AIEnemyTank>();
-
-                    // 3. ИНИЦИАЛИЗАЦИЯ AI-танка (Привязка зависимостей)
-                    if (ai != null)
-                    {
-                        ai.player = player;
-
-                        // Передаем ссылку на MapGenerator (сам этот объект)
-                        ai.mapGenerator = selfMapGenerator;
-
-                        // Передаем ссылку на PlayerController (для логики взрыва бочек)
-                        ai.playerController = playerControllerInstance;
-                    }
-
-                    usedPositions.Add(pos);
-                    spawnedObjects.Add(enemy);
-                }
+                ai.player = player;
+                ai.mapGenerator = this;
+                ai.playerController = playerControllerInstance;
+                ai.resultUI = Resultui;
             }
         }
+
+        // Отладка (можно потом удалить)
+        //Debug.Log($"[SpawnEnemies] {enemiesToSpawn} врагов в чанке {chunkCoord} (dist={distToPlayer:F1})");
     }
+
+
 
     Vector3 GetRandomSpawnPos(Vector3 chunkOrigin, BlockType[,] data, HashSet<Vector3> used, Random rng)
     {
         Vector3 spawnPos = Vector3.negativeInfinity;
         int attempts = 0;
         int maxAttempts = chunkSize * chunkSize * 2;
+        float halfBlock = blockSize / 2f;
 
         do
         {
@@ -669,16 +655,16 @@ public class MapGenerator : MonoBehaviour
             // 1. Проверяем, что ячейка пустая
             if (data[sx, sz] != BlockType.Air) continue;
 
-            spawnPos = chunkOrigin + new Vector3(sx * blockSize, 0, sz * blockSize);
+            // Вычисляем позицию в центре блока (по XZ)
+            spawnPos = chunkOrigin + new Vector3(sx * blockSize + halfBlock, 0, sz * blockSize + halfBlock);
 
-            // 2. Проверяем, что место свободно от других объектов (врагов, стен и т.д.)
-            // Используем центр сферы чуть выше пола
+            // 2. Проверка коллизий
             Collider[] colliders = Physics.OverlapSphere(spawnPos + Vector3.up * 0.5f, enemySpawnCheckRadius);
             bool isClear = true;
             foreach (var col in colliders)
             {
-                // Исключаем пол (если у него есть коллайдер)
-                if (!col.isTrigger && col.gameObject.name != "Central_Floor" && col.gameObject.tag != "Floor")
+                // Исключаем триггеры, пол и стены. Иначе считаем занятым.
+                if (!col.isTrigger && col.gameObject.tag != "Floor" && col.gameObject.tag != "Wall")
                 {
                     isClear = false;
                     break;
@@ -704,47 +690,60 @@ public class MapGenerator : MonoBehaviour
         return new Vector2Int(cx, cz);
     }
 
-    // Вспомогательный метод (оставлен из оригинального кода, но не используется в GenerateChunk)
-    void SpawnEnemyFormation(Vector3 center, int count, Transform parent, HashSet<Vector3> used)
-    {
-        float spacing = 2f;
-        Vector3[] offsets;
-        if (count == 3)
-        {
-            offsets = new Vector3[] { Vector3.zero, new Vector3(spacing, 0, 0), new Vector3(spacing / 2f, 0, spacing) };
-        }
-        else
-        {
-            offsets = new Vector3[] { Vector3.zero, new Vector3(spacing, 0, 0), new Vector3(0, 0, spacing), new Vector3(spacing, 0, spacing) };
-        }
 
-        foreach (var off in offsets)
-        {
-            Vector3 pos = center + off;
-            GameObject enemy = Instantiate(enemyPrefab, pos, Quaternion.identity, parent);
-            var ai = enemy.GetComponent<AIEnemyTank>();
-            if (ai != null) ai.player = player;
-            used.Add(pos);
-        }
-    }
-
-    // В классе MapGenerator
     public Vector3 WorldToBlockPosition(Vector3 worldPosition)
     {
-        // Находим координаты чанка (как в GetChunkCoord)
         Vector2Int chunkCoord = GetChunkCoord(worldPosition);
-
-        // Вычисляем начало чанка (origin) (как в RemoveBlock)
         Vector3 chunkOrigin = new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize);
         Vector3 relativePos = worldPosition - chunkOrigin;
 
-        // Конвертация относительных координат в блочные индексы (как в RemoveBlock)
         int localX = Mathf.FloorToInt(relativePos.x / blockSize);
         int localZ = Mathf.FloorToInt(relativePos.z / blockSize);
 
-        // Возвращаем позицию центра блока (или его начала) в мировых координатах
-        // В данном случае, возвращаем начало блока, как его обрабатывает RemoveBlock:
         return chunkOrigin + new Vector3(localX * blockSize, 0, localZ * blockSize);
     }
+    public void MovePlayerToFreeCellNearCenter()
+    {
+        Vector2Int centerChunk = new Vector2Int(0, 0);
 
+        if (!chunkDataContainer.TryGetValue(centerChunk, out MapChunkData chunkData))
+            return;
+
+        int centerX = chunkSize / 2;
+        int centerZ = chunkSize / 2;
+        float halfBlock = blockSize / 2f;
+        Vector3 chunkOrigin = new Vector3(centerChunk.x * chunkSize * blockSize, 0, centerChunk.y * chunkSize * blockSize);
+
+        // Радиус поиска свободных клеток
+        int radius = Mathf.Min(chunkSize / 2, 8);
+
+        for (int r = 0; r <= radius; r++)
+        {
+            for (int dx = -r; dx <= r; dx++)
+            {
+                for (int dz = -r; dz <= r; dz++)
+                {
+                    int x = centerX + dx;
+                    int z = centerZ + dz;
+                    if (x < 0 || z < 0 || x >= chunkSize || z >= chunkSize)
+                        continue;
+
+                    if (chunkData.data[x, z] == BlockType.Air)
+                    {
+                        Vector3 worldPos = chunkOrigin + new Vector3(x * blockSize + halfBlock, 0, z * blockSize + halfBlock);
+                        player.position = worldPos + Vector3.up * 0.5f; // немного приподнять
+                        return;
+                    }
+                }
+            }
+        }
+
+        Debug.LogWarning("❗Не найдено свободного места для игрока в центральном чанке!");
+    }
+    void OnDifficultySliderChanged(float value)
+    {
+        enemyDifficultyMultiplier = value;
+        PlayerPrefs.SetFloat("EnemyDifficulty", value);
+        PlayerPrefs.Save();
+    }
 }
