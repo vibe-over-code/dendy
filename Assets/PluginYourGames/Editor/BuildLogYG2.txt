@@ -1,6 +1,6 @@
-Build path: D:/unity games/dendy/web
-<<<<<<< Updated upstream
-Build number: 21
+﻿Build path: D:/unity games/dendy/web
+Build number: 23
+PluginYG version: 2.007
 PluginYG version: 2.005
 =======
 Build number: 9

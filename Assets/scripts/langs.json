@@ -24,7 +24,9 @@
     "score":"Score",
     "bestscore":"Best score",
     "reset":"Restart",
-    "difficult":"Difficulty"
+    "difficult":"Difficulty",
+    "yoursc":"Score",
+    "bestsc":"Best score"
   },
   "ru": {
     "play": "Играть",
@@ -51,6 +53,8 @@
     "score":"счет",
     "bestscore":"Лучший счет",
     "reset":"Играть еще",
-    "difficult":"Сложность"
+    "difficult":"Сложность",
+    "yoursc":"Счет",
+    "bestsc":"Лучший счет"
   }
 }

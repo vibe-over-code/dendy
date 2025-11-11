@@ -102,6 +102,7 @@ public class AIEnemyTank : MonoBehaviour
 
     void PlayerDead()
     {
+        mapGenerator.DestroyAllEnemies();
         //player.transform.position = new Vector3(0, 2.6f, 0);
         player.transform.position=mapGenerator.defaultpos;
         int result = Mathf.FloorToInt(playerController.lifetime / 3 + playerController.kills * 3);
@@ -115,8 +116,10 @@ public class AIEnemyTank : MonoBehaviour
             bestScore = result; // обновляем локальную переменную
         }
 
+        string yoursc = Localizator.Get("yorsc");
+        string bestsc = Localizator.Get("bestsc");
         // Показываем результат на UI
-        resultUI.Resulttext.text = $"Ваш счёт: {result}\nЛучший: {bestScore}";
+        resultUI.Resulttext.text = $"yoursc: {result}\nbestsc: {bestScore}";
         resultUI.isdeath = true;
         resultUI.resmoney = result;
 

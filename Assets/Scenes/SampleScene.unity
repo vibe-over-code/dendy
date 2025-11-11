@@ -1225,7 +1225,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 9fac6bdc9de5c264193719238d18efff, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 2.54
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 9fac6bdc9de5c264193719238d18efff, type: 3}
       propertyPath: m_LocalPosition.z
@@ -3218,10 +3218,22 @@ MonoBehaviour:
   m_MinValue: 0
   m_MaxValue: 2
   m_WholeNumbers: 0
-  m_Value: 0.815
+  m_Value: 1.015
   m_OnValueChanged:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1189740617}
+        m_TargetAssemblyTypeName: MapGenerator, Assembly-CSharp
+        m_MethodName: OnDifficultySliderChanged
+        m_Mode: 4
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!1 &956402900
 GameObject:
   m_ObjectHideFlags: 0
@@ -4037,8 +4049,12 @@ MonoBehaviour:
   wallMaterial: {fileID: 2100000, guid: d1f1bd62e6112bc47beaa54e200de532, type: 2}
   barrelPrefab: {fileID: 1964431040936758, guid: ae95d385019def448981b67e58f4dcc2, type: 3}
   enemyPrefab: {fileID: 8275819348789627029, guid: 8f382308a55ae544c96acf092e156faa, type: 3}
-  enemyDifficultySlider: {fileID: 916254468}
-  enemyDifficultyMultiplier: 1.198
+  difficulty: 1
+  baseMaxEnemiesInScene: 5
+  baseEnemiesPerSpawn: 2
+  enemySpawnInterval: 1
+  allEnemies: []
+  baseEnemySpawnChance: 1
   baseMinEnemiesIfSpawned: 1
   baseMaxEnemiesIfSpawned: 3
   minEnemySpawnDistance: 30
@@ -4051,6 +4067,7 @@ MonoBehaviour:
   useRandomSeed: 1
   fixedSeed: 12345
   mapParent: {fileID: 1189740618}
+  difficultySlider: {fileID: 916254468}
   singleFloorPrefab: {fileID: 1512489666}
   invertForward: 1
   invertBack: 1
@@ -5532,7 +5549,7 @@ MonoBehaviour:
     duration: 3
     offset: {x: 700, y: 0}
   fontAsset: {fileID: 11400000, guid: 2e498d1c8094910479dc3e1b768306a4, type: 2}
-  fontSize: 33
+  fontSize: 44
   fontColor: {r: 1, g: 1, b: 1, a: 1}
   pulseSpeed: 3
   pulseAmount: 0.2

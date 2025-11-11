@@ -7,6 +7,7 @@ using TMPro;
 using UnityEngine.UI;
 using System.Collections;
 
+
 // Новые структуры для блочных данных
 public enum BlockType { Air, Wall, Barrel }
 
@@ -44,15 +45,24 @@ public class MapGenerator : MonoBehaviour
     // --- НАСТРОЙКИ ВРАГОВ (КОНТРОЛЬ) ---
     [Header("Враги")]
     public GameObject enemyPrefab;
-    public Slider enemyDifficultySlider;
+    [Header("Настройки сложности")]
+    [Range(0f, 2f)] public float difficulty = 1f; // 0 = легко, 1 = нормально, 2 = сложно
+    private const string DIFFICULTY_PREF_KEY = "Difficulty";
 
-    public float enemyDifficultyMultiplier = 1.0f; // 0.0 - нет врагов, 1.0 - стандарт
+    [Header("Контроль спавна врагов")]
+    public int baseMaxEnemiesInScene = 50;       // базовое значение при сложности = 1
+    public int baseEnemiesPerSpawn = 2;          // базовое значение при сложности = 1
+    public float enemySpawnInterval = 10f;       // интервал между волнами спавна
 
-    // Базовые параметры (при Difficulty=1.0)
-    [Header("Базовые Настройки Спавна (при Difficulty=1.0)")]
-    private float baseEnemySpawnChance = 1f; // Базовый шанс, что в чанке будут враги
-    public int baseMinEnemiesIfSpawned = 1; // Мин. врагов, если спавн произошел
-    public int baseMaxEnemiesIfSpawned = 3; // Макс. врагов, если спавн произошел
+    private int maxEnemiesInScene;
+    private int enemiesPerSpawn;
+    private float lastEnemySpawnTime = -999f;
+    public List<GameObject> allEnemies = new();
+
+    [Header("Базовые параметры спавна врагов по сложности")]
+    public float baseEnemySpawnChance = 1f;  // базовый шанс появления врагов
+    public int baseMinEnemiesIfSpawned = 1;  // мин. кол-во врагов при спавне
+    public int baseMaxEnemiesIfSpawned = 3;  // макс. кол-во врагов при спавне
 
     // Дистанции спавна
     public float minEnemySpawnDistance = 60f; // чуть дальше зоны видимости
@@ -75,6 +85,7 @@ public class MapGenerator : MonoBehaviour
     private int globalSeed;
 
     public Transform mapParent;
+    public Slider difficultySlider;
 
     [Header("Пол")]
     public GameObject singleFloorPrefab;
@@ -100,14 +111,7 @@ public class MapGenerator : MonoBehaviour
 
     void Start()
     {
-        enemyDifficultyMultiplier = PlayerPrefs.GetFloat("EnemyDifficulty", enemyDifficultyMultiplier);
-
-        if (enemyDifficultySlider != null)
-        {
-            enemyDifficultySlider.value = enemyDifficultyMultiplier;
-            enemyDifficultySlider.onValueChanged.AddListener(OnDifficultySliderChanged);
-        }
-
+        ApplyDifficultySettings();
         if (useRandomSeed)
         {
             globalSeed = System.DateTime.Now.GetHashCode();
@@ -127,7 +131,20 @@ public class MapGenerator : MonoBehaviour
         MovePlayerToFreeCellNearCenter();
         defaultpos = player.transform.position;
         UpdateChunks();
-        
+        if (difficultySlider != null)
+        {
+            difficultySlider.value = difficulty; // установить текущую сложность
+            difficultySlider.onValueChanged.AddListener(OnDifficultySliderChanged);
+        }
+        OnDifficultySliderChanged(difficulty);
+
+    }
+    public void OnDifficultySliderChanged(float value)
+    {
+        difficulty = value;
+        PlayerPrefs.SetFloat(DIFFICULTY_PREF_KEY, difficulty);
+        PlayerPrefs.Save();
+        ApplyDifficultySettings();
     }
 
     void Update()
@@ -213,17 +230,24 @@ public class MapGenerator : MonoBehaviour
         }
 
         // Удаляем чанки, которые вышли за renderDistance
+        // Удаляем чанки, которые вышли за renderDistance
         List<Vector2Int> toRemove = new();
         foreach (var kvp in loadedChunks)
         {
             if (!needed.Contains(kvp.Key))
             {
-                // Сначала удаляем все спавненные объекты, если они не были удалены ранее
                 if (chunkDataContainer.TryGetValue(kvp.Key, out MapChunkData chunkData))
                 {
-                    foreach (var obj in chunkData.spawnedObjects)
+                    for (int i = chunkData.spawnedObjects.Count - 1; i >= 0; i--)
                     {
-                        if (obj != null) Destroy(obj);
+                        GameObject obj = chunkData.spawnedObjects[i];
+                        if (obj != null)
+                        {
+                            if (obj.CompareTag("Enemy"))
+                                allEnemies.Remove(obj);
+
+                            Destroy(obj);
+                        }
                     }
                 }
 
@@ -318,6 +342,8 @@ public class MapGenerator : MonoBehaviour
                     chunkData.spawnedObjects.RemoveAt(i);
                 }
             }
+            SpawnEnemiesInChunk(chunkCoord);
+
         }
 
         chunkDataContainer.Add(chunkCoord, chunkData);
@@ -334,22 +360,97 @@ public class MapGenerator : MonoBehaviour
         combinedStaticGO.AddComponent<MeshCollider>().sharedMesh = mesh;
         combinedStaticGO.tag = "Wall";
 
-        StartCoroutine(SpawnEnemiesDelayed(chunkGO.transform, chunkOrigin, chunkCoord, chunkData.data, chunkData.spawnedObjects));
+        SpawnEnemiesInChunk(chunkCoord);
 
         return chunkGO;
     }
-    IEnumerator SpawnEnemiesDelayed(Transform chunkParent, Vector3 chunkOrigin, Vector2Int chunkCoord, BlockType[,] data, List<GameObject> spawnedObjects)
+    IEnumerator SpawnEnemiesDelayed(Vector2Int chunkCoord)
     {
-        // ждём немного, чтобы игрок мог отъехать
         yield return new WaitForSeconds(2f);
 
-        SpawnEnemies(chunkParent, chunkOrigin, chunkCoord, data, spawnedObjects);
+        // Если игрок ещё не активен
+        if (player == null) yield break;
+
+        // Проверка времени спавна
+        if (Time.time - lastEnemySpawnTime < enemySpawnInterval)
+            yield break;
+
+        // Проверка лимита
+        allEnemies.RemoveAll(e => e == null);
+        if (allEnemies.Count >= maxEnemiesInScene)
+            yield break;
+
+        // Получаем данные чанка
+        if (!chunkDataContainer.TryGetValue(chunkCoord, out MapChunkData chunkData)) yield break;
+
+        Vector3 chunkOrigin = new Vector3(chunkCoord.x * chunkSize * blockSize, 0, chunkCoord.y * chunkSize * blockSize);
+        int enemiesToSpawn = Mathf.Min(enemiesPerSpawn, maxEnemiesInScene - allEnemies.Count);
+
+        HashSet<Vector3> usedPositions = new();
+
+        for (int i = 0; i < enemiesToSpawn; i++)
+        {
+            Vector3 spawnPos = GetRandomSpawnPos(chunkOrigin, chunkData.data, usedPositions, new System.Random());
+            if (spawnPos == Vector3.negativeInfinity) continue;
+
+            GameObject enemy = Instantiate(enemyPrefab, spawnPos + Vector3.up * 0.5f, Quaternion.identity, mapParent);
+            enemy.tag = "Enemy";
+
+            // Привязываем врага к чанку
+            chunkData.spawnedObjects.Add(enemy);
+            allEnemies.Add(enemy);
+
+            // Передаём скрипты
+            var ai = enemy.GetComponent<AIEnemyTank>();
+            if (ai != null)
+            {
+                ai.player = player;
+                ai.mapGenerator = this;
+                ai.playerController = playerControllerInstance;
+                ai.resultUI = Resultui;
+            }
+
+            usedPositions.Add(spawnPos);
+        }
+
+        lastEnemySpawnTime = Time.time;
+    }
+
+    void SpawnEnemiesInChunk(Vector2Int chunkCoord)
+    {
+        StartCoroutine(SpawnEnemiesDelayed(chunkCoord));
+    }
+
+
+    void SpawnEnemy(Transform chunkParent, Vector3 chunkOrigin, Vector2Int chunkCoord, BlockType[,] data, List<GameObject> spawnedObjects)
+    {
+        if (enemyPrefab == null || player == null)
+            return;
+
+        Vector3 randomPos = GetRandomSpawnPos(chunkOrigin, data, new HashSet<Vector3>(), new System.Random(globalSeed + chunkCoord.x * 1000 + chunkCoord.y));
+
+        if (randomPos == Vector3.negativeInfinity)
+            return;
+
+        GameObject enemy = Instantiate(enemyPrefab, randomPos + Vector3.up * 0.5f, Quaternion.identity, chunkParent);
+        enemy.tag = "Enemy"; // обязательно ставим тег
+
+        spawnedObjects.Add(enemy);
+        allEnemies.Add(enemy);
+
+        // Передаём ссылки скрипту AIEnemyTank
+        AIEnemyTank ai = enemy.GetComponent<AIEnemyTank>();
+        if (ai != null)
+        {
+            ai.player = player;
+            ai.mapGenerator = this;
+            ai.playerController = playerControllerInstance;
+            ai.resultUI = Resultui;
+        }
     }
 
 
     // ====================== ФУНКЦИИ MESH (СТЕНЫ) ======================
-    // ... (Методы BuildMesh, IsWallAt, GetBlockType, AddFace остаются без изменений)
-    // Вставлены ниже, чтобы не отвлекать от основной логики.
 
     Mesh BuildMesh(Vector2Int chunkCoord, BlockType[,] data)
     {
@@ -582,36 +683,21 @@ public class MapGenerator : MonoBehaviour
 
     void SpawnEnemies(Transform chunkParent, Vector3 chunkOrigin, Vector2Int chunkCoord, BlockType[,] data, List<GameObject> spawnedObjects)
     {
-        if (enemyPrefab == null || player == null || enemyDifficultyMultiplier <= 0)
+        if (enemyPrefab == null || player == null)
             return;
 
-        // --- Исправленный расчёт центра чанка ---
-        Vector3 chunkCenter = chunkOrigin + new Vector3(chunkSize * blockSize / 2f, 0, chunkSize * blockSize / 2f);
-        float distToPlayer = Vector3.Distance(player.position, chunkCenter);
+        // Чистим список, чтобы удалить уничтоженных врагов
+        allEnemies.RemoveAll(e => e == null);
 
-        // --- Мягкая логика спавна ---
-        // Чтобы враги появлялись не только "далеко", а и постепенно вокруг
-        if (distToPlayer > maxEnemySpawnDistance)
+        // Проверяем лимит врагов
+        if (allEnemies.Count >= maxEnemiesInScene)
             return;
 
-        // Уменьшил минимальную дистанцию, чтобы враги появлялись ближе
-        if (distToPlayer < minEnemySpawnDistance * 0.5f)
-            return;
+        // Генератор случайных чисел по сидy чанка
+        System.Random rnd = new System.Random(globalSeed + chunkCoord.x * 1000 + chunkCoord.y);
 
-        // --- Детерминированный сид ---
-        int seed = globalSeed + chunkCoord.x * 1000 + chunkCoord.y;
-        Random rnd = new Random(seed);
-
-        float adjustedChance = Mathf.Clamp01(baseEnemySpawnChance * enemyDifficultyMultiplier);
-        if (rnd.NextDouble() > adjustedChance)
-            return;
-
-        int minToSpawn = Mathf.RoundToInt(baseMinEnemiesIfSpawned * enemyDifficultyMultiplier);
-        int maxToSpawn = Mathf.RoundToInt(baseMaxEnemiesIfSpawned * enemyDifficultyMultiplier);
-        minToSpawn = Mathf.Max(1, minToSpawn);
-        maxToSpawn = Mathf.Max(minToSpawn, maxToSpawn);
-
-        int enemiesToSpawn = rnd.Next(minToSpawn, maxToSpawn + 1);
+        // Определяем количество врагов за спавн
+        int enemiesToSpawn = Mathf.Min(enemiesPerSpawn, maxEnemiesInScene - allEnemies.Count);
 
         HashSet<Vector3> usedPositions = new();
 
@@ -622,8 +708,10 @@ public class MapGenerator : MonoBehaviour
 
             GameObject enemy = Instantiate(enemyPrefab, pos + Vector3.up * 0.5f, Quaternion.identity, chunkParent);
             spawnedObjects.Add(enemy);
+            allEnemies.Add(enemy);
             usedPositions.Add(pos);
 
+            // Настройка AI
             var ai = enemy.GetComponent<AIEnemyTank>();
             if (ai != null)
             {
@@ -633,9 +721,17 @@ public class MapGenerator : MonoBehaviour
                 ai.resultUI = Resultui;
             }
         }
+    }
 
-        // Отладка (можно потом удалить)
-        //Debug.Log($"[SpawnEnemies] {enemiesToSpawn} врагов в чанке {chunkCoord} (dist={distToPlayer:F1})");
+
+    private void ApplyDifficultySettings()
+    {
+        difficulty = PlayerPrefs.GetFloat(DIFFICULTY_PREF_KEY, 1f);
+
+        maxEnemiesInScene = Mathf.RoundToInt(baseMaxEnemiesInScene * Mathf.Lerp(0.5f, 2f, difficulty / 2f));
+        enemiesPerSpawn = Mathf.RoundToInt(baseEnemiesPerSpawn * Mathf.Lerp(0.5f, 2f, difficulty / 2f));
+
+        Debug.Log($"[Difficulty] Загружено: {difficulty:F2}, Макс врагов = {maxEnemiesInScene}, За спавн = {enemiesPerSpawn}");
     }
 
 
@@ -740,10 +836,31 @@ public class MapGenerator : MonoBehaviour
 
         Debug.LogWarning("❗Не найдено свободного места для игрока в центральном чанке!");
     }
-    void OnDifficultySliderChanged(float value)
+    
+    public void DestroyAllEnemies()
     {
-        enemyDifficultyMultiplier = value;
-        PlayerPrefs.SetFloat("EnemyDifficulty", value);
-        PlayerPrefs.Save();
+        foreach (var enemy in allEnemies)
+        {
+            if (enemy != null)
+                Destroy(enemy);
+        }
+        allEnemies.Clear();
+
+        // Также очищаем врагов в чанках
+        foreach (var chunk in chunkDataContainer.Values)
+        {
+            for (int i = chunk.spawnedObjects.Count - 1; i >= 0; i--)
+            {
+                var obj = chunk.spawnedObjects[i];
+                if (obj != null && obj.CompareTag("Enemy"))
+                {
+                    Destroy(obj);
+                    chunk.spawnedObjects.RemoveAt(i);
+                }
+            }
+        }
+
+        Debug.Log(" Все враги удалены");
     }
+
 }
