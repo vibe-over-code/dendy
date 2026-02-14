@@ -5,6 +5,9 @@ using System.Linq; // Для LINQ (FindFirstOf)
 public class PlayerController : MonoBehaviour
 {
     private MapGenerator mapGenerator;
+    private Abilities abilities;
+    public Resultui resultUI;
+
 
     [Header("Movement")]
     public float moveSpeed = 5f;
@@ -54,8 +57,10 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
-        // Ищем MapGenerator
+        abilities = GetComponent<Abilities>();
         mapGenerator = FindObjectOfType<MapGenerator>();
+        isMobile = mobileTestMode || Application.isMobilePlatform;
+
         if (mapGenerator == null)
         {
             Debug.LogError("MapGenerator не найден! Разрушаемость блоков работать не будет.");
@@ -76,6 +81,11 @@ public class PlayerController : MonoBehaviour
         else
         {
             HandleKeyboardInput();
+        }
+
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            abilities.CallAirStrike(transform.position + transform.forward * 10f);
         }
 
         if (moveDirection != Vector3.zero)
@@ -305,13 +315,16 @@ public class PlayerController : MonoBehaviour
         }
 
         //Попадание во врага
-        else if (go.CompareTag("Enemy"))
+        if (hit.collider.CompareTag("Enemy"))
         {
-            kills += 1;
-            if (explosionPrefab != null)
-                Instantiate(explosionPrefab, hit.point, Quaternion.identity);
-            
-            Destroy(go); // Убиваем врага
+            // Вместо Destroy(go) и kills+=1
+            AIEnemyTank enemyAI = hit.collider.GetComponent<AIEnemyTank>();
+            if (enemyAI)
+            {
+                enemyAI.TakeDamage(1);
+            }
+            // Визуальный эффект
+            if (explosionPrefab) Instantiate(explosionPrefab, hit.point, Quaternion.identity);
         }
         //Попадание в другие объекты
         else
@@ -319,6 +332,19 @@ public class PlayerController : MonoBehaviour
             if (explosionPrefab != null)
                 Instantiate(explosionPrefab, hit.point, Quaternion.identity);
         }
+    }
+
+    public void TakeHit()
+    {
+        // Если щит активен - поглощаем урон
+        if (!abilities.TryTakeDamage())
+        {
+            Debug.Log("Shield Absorbed Damage!");
+            return;
+        }
+
+        // Если щита нет - умираем
+        PlayerDead();
     }
 
     // Создает визуальный след с помощью LineRenderer.
@@ -367,5 +393,42 @@ public class PlayerController : MonoBehaviour
                 Screen.height - joystickCenter.y - 15,
                 30, 30), Texture2D.whiteTexture);
         }
+    }
+
+    void PlayerDead()
+    {
+        Debug.Log("Player Died");
+
+        // Все враги удаляются
+        if (mapGenerator) mapGenerator.DestroyAllEnemies();
+
+        // Респы
+        transform.position = mapGenerator ? mapGenerator.defaultpos : Vector3.zero;
+
+        // Подсчет очков
+        int result = Mathf.FloorToInt(lifetime / 3 + kills * 3);
+
+        // Сохранение (YG или PlayerPrefs)
+        int bestScore = PlayerPrefs.GetInt("bestscore", 0);
+        if (result > bestScore)
+        {
+            PlayerPrefs.SetInt("bestscore", result);
+            PlayerPrefs.Save();
+            bestScore = result;
+        }
+
+        // UI
+        if (resultUI)
+        {
+            resultUI.Resulttext.text = $"Score: {result}\nBest: {bestScore}";
+            resultUI.isdeath = true;
+            resultUI.resmoney = result;
+        }
+
+        lifetime = 0;
+        kills = 0;
+
+        // Сбросить щит при смерти
+        abilities.DeactivateShield();
     }
 }

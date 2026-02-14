@@ -104,6 +104,12 @@ public class MapGenerator : MonoBehaviour
     private Vector2Int currentChunk;
     public Vector3 defaultpos;
 
+    [Header("New Features")]
+    public GameObject bossPrefab; // Тот же танк, но с галочкой isBoss = true и размером побольше
+    public GameObject shieldPickupPrefab; // Сфера с коллайдером (Trigger) и скриптом PickupItem
+    public float bossSpawnChance = 0.05f; // 5% шанс спавна босса вместо обычного
+    public float itemSpawnChance = 0.05f; // Шанс спавна предмета в пустой клетке
+
     // UV-смещение (если используется атлас текстур)
     private readonly Vector2 WALL_UV_OFFSET = new Vector2(0, 0);
 
@@ -305,6 +311,14 @@ public class MapGenerator : MonoBehaviour
                 else
                 {
                     chunkData.data[x, z] = BlockType.Air;
+
+                    // Попытка спавна предмета
+                    if (shieldPickupPrefab != null && chunkRnd.NextDouble() < itemSpawnChance)
+                    {
+                        Vector3 itemPos = chunkOrigin + pos + new Vector3(blockSize / 2f, 0.5f, blockSize / 2f);
+                        GameObject item = Instantiate(shieldPickupPrefab, itemPos, Quaternion.identity, chunkGO.transform);
+                        chunkData.spawnedObjects.Add(item);
+                    }
                 }
             }
         }
@@ -388,12 +402,27 @@ public class MapGenerator : MonoBehaviour
 
         HashSet<Vector3> usedPositions = new();
 
+        // Создаем генератор случайных чисел ОДИН раз перед циклом
+        System.Random rng = new System.Random();
+
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            Vector3 spawnPos = GetRandomSpawnPos(chunkOrigin, chunkData.data, usedPositions, new System.Random());
+            // ИСПРАВЛЕНИЕ 1: Передаем созданный rng
+            Vector3 spawnPos = GetRandomSpawnPos(chunkOrigin, chunkData.data, usedPositions, rng);
+
             if (spawnPos == Vector3.negativeInfinity) continue;
 
-            GameObject enemy = Instantiate(enemyPrefab, spawnPos + Vector3.up * 0.5f, Quaternion.identity, mapParent);
+            GameObject prefabToSpawn = enemyPrefab;
+
+            // ИСПРАВЛЕНИЕ 2: Теперь rng существует и этот код сработает
+            if (bossPrefab != null && rng.NextDouble() < bossSpawnChance)
+            {
+                prefabToSpawn = bossPrefab;
+            }
+
+            // ИСПРАВЛЕНИЕ 3: Заменили randomPos на spawnPos
+            GameObject enemy = Instantiate(prefabToSpawn, spawnPos + Vector3.up * 0.5f, Quaternion.identity, mapParent);
+
             enemy.tag = "Enemy";
 
             // Привязываем врага к чанку
@@ -408,6 +437,13 @@ public class MapGenerator : MonoBehaviour
                 ai.mapGenerator = this;
                 ai.playerController = playerControllerInstance;
                 ai.resultUI = Resultui;
+
+                // Если это босс, включаем флаг (если вы добавили isBoss в AIEnemyTank)
+                if (prefabToSpawn == bossPrefab)
+                {
+                    ai.isBoss = true;
+                    ai.maxHealth = 5; // Пример HP для босса
+                }
             }
 
             usedPositions.Add(spawnPos);
