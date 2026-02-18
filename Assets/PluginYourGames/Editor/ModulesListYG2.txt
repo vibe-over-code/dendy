@@ -1,2 +1,2 @@
-Localization v1.01
+Localization v1.02
 RewardedAdv v1.011

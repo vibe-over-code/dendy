@@ -1,87 +1,100 @@
-Shader "Custom/ForceFieldDistortion"
+Shader "Custom/HeavyShield"
 {
     Properties
     {
-        _Color ("Tint Color", Color) = (0, 0.5, 1, 0.5)
-        _RimColor ("Rim Color", Color) = (0, 0.8, 1, 1)
-        _RimPower ("Rim Power", Range(0.5, 8.0)) = 3.0
-        _Distortion ("Distortion Strength", Range(0, 1)) = 0.1
-        _Speed ("Animation Speed", Range(0, 5)) = 1
-        _BumpMap ("Normal Map (Distortion)", 2D) = "bump" {}
+        [HDR] _BaseColor ("Inside Color", Color) = (0, 0.2, 0.5, 0.1)
+        [HDR] _LineColor ("Intersection Line", Color) = (0, 1, 2, 5)
+        _LineThickness ("Line Thickness", Range(0.01, 1.0)) = 0.1
+        _RimPower ("Rim Sharpness", Range(0.5, 10.0)) = 5.0
+        
+        [Header(Hit Effect)]
+        _HitPos ("Hit World Position", Vector) = (0,0,0,0)
+        _HitTime ("Hit Time", Float) = -100
+        _BrokenScale ("Broken Noise Scale", Float) = 20.0
     }
     SubShader
     {
-        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" }
-        
-        // GrabPass захватывает то, что за объектом, для искажения
-        GrabPass { "_GrabTexture" }
+        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "RenderPipeline" = "UniversalPipeline" }
+        Blend One One // Additive для максимальной яркости
+        ZWrite Off
 
         Pass
         {
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 
-            struct appdata_t
-            {
-                float4 vertex : POSITION;
-                float3 normal : NORMAL;
-                float2 uv : TEXCOORD0;
+            struct Attributes {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
             };
 
-            struct v2f
-            {
-                float4 vertex : SV_POSITION;
-                float4 grabPos : TEXCOORD0;
-                float2 uv : TEXCOORD1;
-                float3 normal : NORMAL;
-                float3 viewDir : TEXCOORD3;
+            struct Varyings {
+                float4 positionCS : SV_POSITION;
+                float4 screenPos : TEXCOORD0;
+                float3 worldPos : TEXCOORD1;
+                float3 normalWS : TEXCOORD3;
             };
 
-            sampler2D _GrabTexture;
-            sampler2D _BumpMap;
-            float4 _BumpMap_ST;
-            float4 _Color;
-            float4 _RimColor;
-            float _RimPower;
-            float _Distortion;
-            float _Speed;
+            float4 _BaseColor, _LineColor, _HitPos;
+            float _LineThickness, _RimPower, _HitTime, _BrokenScale;
 
-            v2f vert (appdata_t v)
-            {
-                v2f o;
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.grabPos = ComputeGrabScreenPos(o.vertex);
-                o.uv = TRANSFORM_TEX(v.uv, _BumpMap);
-                
-                // Данные для Rim Effect
-                o.normal = UnityObjectToWorldNormal(v.normal);
-                o.viewDir = normalize(WorldSpaceViewDir(v.vertex));
+            // Функция простого шума для "эффекта поломки"
+            float hash(float3 p) {
+                p = frac(p * 0.3183099 + 0.1);
+                p *= 17.0;
+                return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
+            }
+
+            Varyings vert (Attributes v) {
+                Varyings o;
+                o.worldPos = TransformObjectToWorld(v.positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(o.worldPos);
+                o.screenPos = ComputeScreenPos(o.positionCS);
+                o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
-            {
-                // Анимация UV
-                float2 animatedUV = i.uv + _Time.y * _Speed * 0.1;
+            half4 frag (Varyings i) : SV_Target {
+                float2 uv = i.screenPos.xy / i.screenPos.w;
+                float3 viewDir = normalize(GetWorldSpaceViewDir(i.worldPos));
                 
-                // Искажение на основе нормал мапы
-                half3 bump = UnpackNormal(tex2D(_BumpMap, animatedUV));
-                float2 offset = bump.xy * _Distortion;
+                // 1. ЧЕТКАЯ ЛИНИЯ ГРАНИЦЫ
+                float rawDepth = SampleSceneDepth(uv);
+                float sceneZ = LinearEyeDepth(rawDepth, _ZBufferParams);
+                float thisZ = i.positionCS.w;
+                float diff = sceneZ - thisZ;
                 
-                // Сэмплим текстуру фона со смещением
-                float4 screenColor = tex2Dproj(_GrabTexture, i.grabPos + float4(offset, 0, 0));
+                // Используем step для резкой линии
+                float intersection = 1.0 - smoothstep(0, _LineThickness, diff);
                 
-                // Эффект Френеля (светящиеся края)
-                float NdotV = 1.0 - saturate(dot(i.normal, i.viewDir));
-                float rim = pow(NdotV, _RimPower);
-                float4 rimGlow = _RimColor * rim;
+                // 2. РЕЗКИЙ RIM (Края сферы)
+                float rim = 1.0 - saturate(dot(i.normalWS, viewDir));
+                rim = pow(rim, _RimPower);
 
-                // Смешиваем фон, тинт и рим-лайт
-                return screenColor * (1 - _Color.a) + _Color * _Color.a + rimGlow;
+                // 3. ЭФФЕКТ "ПОЛОМКИ" ПРИ ПОПАДАНИИ
+                float timeDist = _Time.y - _HitTime;
+                float hitEffect = 0;
+                float noise = hash(i.worldPos * _BrokenScale + _Time.y);
+
+                if (timeDist < 0.8) {
+                    float distToHit = distance(i.worldPos, _HitPos.xyz);
+                    // Расширяющееся кольцо "поломки"
+                    float sphereWave = 1.0 - saturate(abs(distToHit - timeDist * 5.0));
+                    hitEffect = sphereWave * noise * 10.0 * (1.0 - timeDist);
+                }
+
+                // ИТОГОВЫЙ ЦВЕТ
+                half4 finalColor = _BaseColor;
+                finalColor.rgb += intersection * _LineColor.rgb * 2.0; // Контур ярче
+                finalColor.rgb += rim * _LineColor.rgb;
+                finalColor.rgb += hitEffect * _LineColor.rgb;
+
+                return half4(finalColor.rgb, 1.0); // В Additive Alpha работает как множитель яркости
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

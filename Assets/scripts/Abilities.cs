@@ -13,8 +13,26 @@ public class Abilities : MonoBehaviour
     public float strikeRadius = 15f;
     public int bombCount = 5;
 
+    private Material shieldMat;
+
+    private int hitPosID = Shader.PropertyToID("_HitPos");
+    private int hitTimeID = Shader.PropertyToID("_HitTime");
+
     void Start()
     {
+        Camera.main.depthTextureMode = DepthTextureMode.Depth;
+        if (shieldVisual)
+        {
+            Renderer rend = shieldVisual.GetComponent<Renderer>();
+            if (rend)
+            {
+                // Создаем инстанс материала, чтобы менять его только у этого танка
+                shieldMat = rend.material;
+                hitTimeID = Shader.PropertyToID("_HitTime");
+            }
+            // Убеждаемся, что детектор включен, если щит активен
+            shieldVisual.SetActive(hasShield);
+        }
         UpdateShieldVisual();
     }
 
@@ -35,17 +53,29 @@ public class Abilities : MonoBehaviour
         if (shieldVisual) shieldVisual.SetActive(hasShield);
     }
 
+    public void OnShieldHit(Vector3 worldContactPoint)
+    {
+        if (!hasShield || shieldMat == null) return;
+
+        shieldMat.SetVector(hitPosID, new Vector4(worldContactPoint.x, worldContactPoint.y, worldContactPoint.z, 1));
+        shieldMat.SetFloat(hitTimeID, Time.time);
+
+    }
+
     // ������ ��������� ����� � ������ ����
     // ���������� TRUE, ���� ���� ������, � FALSE, ���� ��� �������� ���
     public bool TryTakeDamage()
     {
         if (hasShield)
         {
-            DeactivateShield();
-            // ��� ����� �������� ���� �������� ����
-            return false; // ���� �� ������
+            Debug.Log("Щит сработал! Поглощаю урон.");
+            //OnShieldHit();
+            hasShield = false; // Выключаем щит
+            UpdateShieldVisual();
+            return false; // Урон не прошел
         }
-        return true; // ���� ������
+        Debug.Log("Щита нет! Игрок получает урон.");
+        return true; // Урон прошел
     }
 
     // ����� ��������� ������ ����

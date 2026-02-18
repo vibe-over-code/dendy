@@ -8,6 +8,8 @@ TagManager:
   - Enemy
   - Barrel
   - Floor
+  - Pickup
+  - Shield
   layers:
   - Default
   - TransparentFX

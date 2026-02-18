@@ -103,8 +103,6 @@ public class AIEnemyTank : MonoBehaviour
 
         if (Physics.Raycast(firePoint.position, shootDir, out RaycastHit hit, shotDistance))
         {
-            // Визуал (для дебага или line renderer)
-            // ...
 
             if (hit.collider.CompareTag("Player"))
             {
@@ -120,6 +118,12 @@ public class AIEnemyTank : MonoBehaviour
             {
                 playerController.ExplodeBarrel(hit.collider.transform.position);
                 Destroy(hit.collider.gameObject);
+            }
+            if (hit.collider.CompareTag("Shield"))
+            {
+                // Пуля попала в щит!
+                var abilities = hit.collider.GetComponentInParent<Abilities>();
+                if (abilities) abilities.TryTakeDamage();
             }
 
             if (explosionPrefab)
